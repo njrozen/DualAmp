@@ -126,6 +126,14 @@ class SleepKeysService : AccessibilityService() {
     }
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
+        // Lid shut: L2 / R2 work as in the app (tap: next visualizer / play-pause; hold: rewind / fast forward).
+        if (lidClosed && (event.keyCode == KeyEvent.KEYCODE_BUTTON_L2 || event.keyCode == KeyEvent.KEYCODE_BUTTON_R2)) {
+            if (PlayerConnection.state.value.queue.isEmpty()) return false
+            val right = event.keyCode == KeyEvent.KEYCODE_BUTTON_R2
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) ControllerBus.triggerDown(right)
+            else if (event.action == KeyEvent.ACTION_UP) ControllerBus.triggerUp(right)
+            return true
+        }
         if (event.keyCode !in SHOULDER_KEYS) return false
         if (lidClosed) {
             // Lid shut, screen kept on in black: the buttons control music whatever app is underneath.
@@ -220,7 +228,8 @@ class SleepKeysService : AccessibilityService() {
                         // Logged for both press and release; handle() keeps it to one action.
                         main.post {
                             // With the lid closed and the screen kept on, just act; otherwise sleep again after.
-                            if (lidClosed) handle(code) else if (asleepContext() && handle(code)) sleepAgain()
+                            // (Lid shut: R2 is handled as a key, tap or hold, in onKeyEvent.)
+                            if (lidClosed) { if (code != KeyEvent.KEYCODE_BUTTON_R2) handle(code) } else if (asleepContext() && handle(code)) sleepAgain()
                         }
                     }
                 }

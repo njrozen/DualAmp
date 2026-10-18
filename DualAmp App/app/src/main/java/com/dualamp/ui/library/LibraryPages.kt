@@ -52,7 +52,8 @@ enum class Category(val label: String) {
 }
 
 /** Order here is the order the view button cycles through. */
-enum class ViewMode { LIST, GRID, COVERFLOW, COMPACT }
+/** The ways to show a page: list (track number / art, length on the right), grid of squares, Cover Flow. */
+enum class ViewMode { LIST, GRID, COVERFLOW }
 
 enum class Sort(val label: String) {
     NAME("Name"), ARTIST("Artist"), ALBUM("Album"), YEAR("Release year"), ADDED("Recently added"),
@@ -142,12 +143,15 @@ data class Entry(
     val queueIndex: Int? = null,
     /** Small icon before the title saying what the entry is (artist / album), used in search results. */
     val badge: ImageVector? = null,
+    /** A full-width row even in the grid (e.g. the artist page's All songs / Albums / Singles, so their names show). */
+    val wide: Boolean = false,
 ) {
     /** Actions and settings are drawn as full-width rows even in grid view. */
-    val fullWidth: Boolean get() = kind == Kind.ACTION || kind == Kind.SETTING || kind == Kind.HEADER
+    val fullWidth: Boolean get() = wide || kind == Kind.ACTION || kind == Kind.SETTING || kind == Kind.HEADER
 }
 
-class SliderSpec(val setting: com.dualamp.settings.Prefs.Setting<Int>, val min: Int, val max: Int, val step: Int, val unit: String)
+/** A setting shown as a slider. With [minLabel], the leftmost position reads as that word (e.g. "Never") instead of a number. */
+class SliderSpec(val setting: com.dualamp.settings.Prefs.Setting<Int>, val min: Int, val max: Int, val step: Int, val unit: String, val minLabel: String? = null)
 
 data class Hero(val title: String, val subtitle: String, val detail: String, val art: Art, val round: Boolean = false)
 
@@ -352,14 +356,14 @@ fun buildPage(
             val heroArt = a.albums.firstOrNull()?.let { Art.Cover(it.id, it.coverSongId) } ?: Art.Symbol(Icons.Rounded.Person, a.name)
             fun group(kind: String, title: String, list: List<Album>) =
                 Entry("rel:$kind:${a.name}", title, plural(list.size, "release"), Art.Symbol(Icons.Rounded.Album, "$kind${a.name}"),
-                    Kind.CONTAINER, target = Page.ArtistReleases(a.name, kind), songs = { list.flatMap { it.songs } })
+                    Kind.CONTAINER, target = Page.ArtistReleases(a.name, kind), songs = { list.flatMap { it.songs } }, wide = true)
             PageData(
                 title = a.name,
                 hero = Hero(a.name, "Artist", "${plural(albums.size, "album")} · ${plural(singles.size, "single")} · ${plural(a.songs.size, "song")}",
                     heroArt, round = true),
                 entries = playActions(a.songs, shuffleOnly = true) +
                     Entry("all:${a.name}", "All songs", plural(a.songs.size, "song"), Art.Symbol(Icons.Rounded.LibraryMusic, a.name),
-                        Kind.CONTAINER, target = Page.SongsOf(a.name, "artist", a.name), songs = { a.songs }) +
+                        Kind.CONTAINER, target = Page.SongsOf(a.name, "artist", a.name), songs = { a.songs }, wide = true) +
                     listOfNotNull(
                         group("all", "All releases", albums + singles).takeIf { singles.isNotEmpty() && albums.isNotEmpty() },
                         group("albums", "Albums", albums).takeIf { albums.isNotEmpty() },
@@ -650,7 +654,7 @@ private fun buildRoot(
         val current = player.songId?.let { lib.songById[it] }
         val songs = player.upNext.mapNotNull { i -> player.queue.getOrNull(i)?.let { lib.songById[it] }?.let { i to it } }
         val clear = if (songs.isEmpty()) emptyList() else listOf(
-            actionEntry("act:clearqueue", "Clear queue", Icons.Rounded.ClearAll, "Keeps the current song playing · L3 also clears", action = actions.clearQueue)
+            actionEntry("act:clearqueue", "Clear queue", Icons.Rounded.ClearAll, "Keeps the current song playing · hold L3 also clears", action = actions.clearQueue)
         )
         PageData(
             "Your Library",
@@ -720,29 +724,68 @@ private fun buildSettings(actions: UiActions): PageData {
     fun header(title: String) = Entry("hdr:$title", title, "", Art.None, Kind.HEADER)
     val p = com.dualamp.settings.Prefs
     val presetCount = PresetManager.presets.value.size
+    // The slider goes from "Never" (stored as 2, all the way left) to 30 s; older versions stored never as 0.
+    if (p.overlayTimeoutSec.value !in 2..30) p.overlayTimeoutSec.value = p.overlayTimeoutSec.value.coerceIn(2, 30)
     return PageData(
         title = "Settings",
-        entries = listOf(
-            header("Library"),
+        entries = listOfNotNull(
+            header("Music library"),
             Entry("set:folders", "Music folders", plural(LibraryRepository.musicFolders.size, "folder") + " in your library", Art.Symbol(Icons.Rounded.Folder, "folders"), Kind.CONTAINER, target = Page.MusicFolders),
             Entry("set:pc", "PC music", if (com.dualamp.settings.Prefs.serverUrl.value.isBlank()) "Play your PC / foobar2000 library over Wi-Fi" else "${pcLinkLabel()} · ${com.dualamp.settings.Prefs.serverUrl.value}", Art.Symbol(Icons.Rounded.Computer, "pcmusic"), Kind.CONTAINER, target = Page.PcMusic),
             setting("rescan", "Rescan music library", "", action = actions.rescan),
 
+            header("Library view"),
+            libraryViewSetting(true, if (p.sameViewEverywhere.value) "Library view" else "Library view: categories",
+                if (p.sameViewEverywhere.value) "Playlists, Artists, Albums... and the pages inside them" else "Playlists, Artists, Albums..."),
+            if (p.sameViewEverywhere.value) null else libraryViewSetting(false, "Library view: inside", "An artist, album, playlist, genre..."),
+            colorChoice("launchroot", if (p.sameViewEverywhere.value) "View on launch" else "View on launch: categories",
+                "The view DualAmp starts with. Last used: whatever you had", listOf("Last used", "Grid", "List", "Cover Flow"), p.launchViewRoot.value) { p.launchViewRoot.value = it },
+            if (p.sameViewEverywhere.value) null else colorChoice("launchpage", "View on launch: inside", "An artist, album, playlist... when DualAmp starts",
+                listOf("Last used", "Grid", "List", "Cover Flow"), p.launchViewPage.value) { p.launchViewPage.value = it },
+            setting("sameview", "Same view everywhere", onOff(p.sameViewEverywhere.value), "Off: categories and the pages inside them each keep their own view") {
+                p.sameViewEverywhere.value = !p.sameViewEverywhere.value
+            },
+            Entry("set:gridsize", "Grid size", "Squares per row in the grid view",
+                Art.Symbol(Icons.Rounded.Settings, "gridsize"), Kind.SETTING,
+                slider = SliderSpec(if (singleScreenLayout) p.gridColumnsSingle else p.gridColumns, 3, 6, 1, "per row")),
+            colorChoice("glowcolor", "Cover Flow glow", "Behind the cover the gamepad is on (Auto: white, or black in the Light theme)", com.dualamp.ui.AppTheme.glows.keys, com.dualamp.ui.AppTheme.glowName, com.dualamp.ui.AppTheme::setGlow),
+            colorChoice("glowshape", "Cover Flow glow shape", "Circle, tall oval, tall diamond, or two thin diamonds crossed",
+                listOf("Circle", "Oval", "Diamond", "Cross / X"), p.coverGlowShape.value) { p.coverGlowShape.value = it },
+            colorChoice("glowanim", "Cover Flow glow animation", "How the glow appears: grows from the centre, drops in from the top, or just appears",
+                listOf("Expand", "Drop", "None"), p.coverGlowAnim.value) { p.coverGlowAnim.value = it },
+            Entry("set:glowopacity", "Cover Flow glow strength", "0: no glow. Above 100 %: bigger and brighter",
+                Art.Symbol(Icons.Rounded.Settings, "glowopacity"), Kind.SETTING,
+                slider = SliderSpec(p.coverGlowOpacity, 0, 200, 10, "%")),
+
+            header("Theme"),
+            colorChoice("theme", "Theme", "The colors of the bottom screen", com.dualamp.ui.AppTheme.presets.keys,
+                com.dualamp.ui.AppTheme.presetName, com.dualamp.ui.AppTheme::applyPreset),
+            colorChoice("accent", "Accent", "Selected tabs and buttons; like and shuffle on the top screen", com.dualamp.ui.AppTheme.accents.keys, com.dualamp.ui.AppTheme.accentName, com.dualamp.ui.AppTheme::setAccent),
+
             header("Screens"),
-            setting("dual", "Use both screens", onOff(p.dualScreen.value), "Now playing on top, library below") {
-                p.dualScreen.value = !p.dualScreen.value; actions.relaunch()
+            // Shows the screens in use now: opened on the bottom screen (e.g. as a companion app) that is the bottom one alone.
+            com.dualamp.DualScreen.screensLabel(com.dualamp.DualScreen.running ?: p.screens.value).let { now ->
+                colorChoice("screens", "Use both screens", "Both: now playing on top, library below. Top or Bottom: everything on that screen",
+                    com.dualamp.DualScreen.screenOptions.map(com.dualamp.DualScreen::screensLabel), now) { label ->
+                    val value = com.dualamp.DualScreen.screenOptions.first { com.dualamp.DualScreen.screensLabel(it) == label }
+                    p.screens.value = value
+                    if (label != now) actions.relaunch()
+                }
             },
             setting("swap", "Swap screens", onOff(p.swapScreens.value), "If the screens open the wrong way round") {
                 p.swapScreens.value = !p.swapScreens.value; actions.relaunch()
+            },
+            setting("singleswap", "Swap sides (single-screen)", onOff(p.singleSwap.value), "Library on the left in landscape, on top in portrait") {
+                p.singleSwap.value = !p.singleSwap.value
             },
             setting("orientation", "Screen orientation", com.dualamp.Orientation.label(p.orientation.value), "Both screens. Auto follows how you hold the Thor") {
                 p.orientation.value = cycle(com.dualamp.Orientation.options, p.orientation.value)
             },
 
-            header("Now playing"),
-            setting("overlay", "Fade to visualizer after", p.overlayTimeoutSec.value.let { if (it == 0) "Never" else "$it s" }, "While a song is playing") {
-                p.overlayTimeoutSec.value = cycle(listOf(2, 3, 4, 6, 10, 0), p.overlayTimeoutSec.value)
-            },
+            header("Now playing - top screen"),
+            Entry("set:overlay", "Fade to visualizer after", "While a song is playing, the song info fades after this long (all the way left: never)",
+                Art.Symbol(Icons.Rounded.Settings, "overlay"), Kind.SETTING,
+                slider = SliderSpec(p.overlayTimeoutSec, 2, 30, 1, "s", minLabel = "Never")),
             Entry("set:backdrop", "Song info background", "Darkens the visualizer behind the song info",
                 Art.Symbol(Icons.Rounded.Settings, "backdrop"), Kind.SETTING,
                 slider = SliderSpec(p.infoBackdrop, 0, 100, 5, "%")),
@@ -843,3 +886,17 @@ private fun pcLinkLabel() = if (!com.dualamp.library.RemoteLibrary.active.value)
     com.dualamp.library.RemoteLibrary.Connection.LOST -> "Can't reach your PC"
     else -> "Looking for your PC…"
 }
+
+/** Settings row: the library view (list, grid or Cover Flow) for the categories ([root]) or the pages inside them. */
+private fun libraryViewSetting(root: Boolean, title: String, subtitle: String): Entry {
+    val names = mapOf("GRID" to "Grid", "LIST" to "List", "COVERFLOW" to "Cover Flow")
+    return Entry("set:view:$root", title, subtitle, Art.Symbol(Icons.Rounded.Settings, "view$root"), Kind.SETTING,
+        trailing = names[com.dualamp.settings.LibraryView.get(root)] ?: "Grid",
+        choices = names.values.toList(),
+        onChoose = { c -> names.entries.firstOrNull { it.value == c }?.let { com.dualamp.settings.LibraryView.set(root, it.key) } })
+}
+
+/** Settings row with a drop-down list of named colors (or presets). */
+private fun colorChoice(key: String, title: String, subtitle: String, names: Collection<String>, current: String, set: (String) -> Unit) =
+    Entry("set:$key", title, subtitle, Art.Symbol(Icons.Rounded.Settings, key), Kind.SETTING,
+        trailing = current, choices = names.toList(), onChoose = set)

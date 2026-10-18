@@ -35,25 +35,31 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.dualamp.library.Artwork
 
-val Accent = Color(0xFF1DB954)
+// Theme colors (Settings > Theme, see AppTheme). The visualizer's purple stays the same in every theme.
+val Accent: Color get() = AppTheme.accent()
 val AccentViz = Color(0xFFB388FF)
-val Surface1 = Color(0xFF121212)
-val Surface2 = Color(0xFF1E1E1E)
-val Surface3 = Color(0xFF2A2A2A)
-val TextDim = Color(0xFFB3B3B3)
+val Surface1: Color get() = AppTheme.bg().s1
+val Surface2: Color get() = AppTheme.bg().s2
+val Surface3: Color get() = AppTheme.bg().s3
+val TextDim: Color get() = AppTheme.subText()
+/** Main text on the bottom screen. */
+val TextMain: Color get() = AppTheme.text()
+/** Icons on the bottom screen. */
+val IconTint: Color get() = AppTheme.icon()
 
 @Composable
 fun DualAmpTheme(content: @Composable () -> Unit) {
     MaterialTheme(
+        // The top screen's colors; the bottom screen adds the theme on top (LibraryTheme).
         colorScheme = darkColorScheme(
             primary = Accent,
             onPrimary = Color.Black,
             secondary = AccentViz,
-            background = Surface1,
-            surface = Surface1,
-            surfaceVariant = Surface2,
+            background = Color(0xFF121212),
+            surface = Color(0xFF121212),
+            surfaceVariant = Color(0xFF1E1E1E),
             onSurface = Color.White,
-            onSurfaceVariant = TextDim,
+            onSurfaceVariant = Color(0xFFB3B3B3),
         ),
     ) {
         // Default text and icon colour for everything not inside a Surface.
@@ -124,4 +130,36 @@ fun Modifier.holdKeyFocus(): Modifier {
     val requester = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { requester.requestFocus() } }
     return this.focusRequester(requester).focusable()
+}
+
+/**
+ * The bottom screen's theme (Settings > Theme): background, text and sub text, accent and icon colors.
+ * Text takes the text color; icons and other content the icon color.
+ */
+@Composable
+fun LibraryTheme(content: @Composable () -> Unit) {
+    val bg = AppTheme.bg()
+    val text = TextMain
+    val base = if (bg.light) androidx.compose.material3.lightColorScheme() else darkColorScheme()
+    val scheme = base.copy(
+        primary = Accent, onPrimary = if (bg.light) Color.White else Color.Black, secondary = AccentViz,
+        background = bg.s1, surface = bg.s1, surfaceVariant = bg.s2, surfaceContainer = bg.s2,
+        onBackground = text, onSurface = text, onSurfaceVariant = TextDim,
+    )
+    val t = androidx.compose.material3.Typography()
+    fun androidx.compose.ui.text.TextStyle.c() = copy(color = text)
+    val typography = t.copy(
+        displayLarge = t.displayLarge.c(), displayMedium = t.displayMedium.c(), displaySmall = t.displaySmall.c(),
+        headlineLarge = t.headlineLarge.c(), headlineMedium = t.headlineMedium.c(), headlineSmall = t.headlineSmall.c(),
+        titleLarge = t.titleLarge.c(), titleMedium = t.titleMedium.c(), titleSmall = t.titleSmall.c(),
+        bodyLarge = t.bodyLarge.c(), bodyMedium = t.bodyMedium.c(), bodySmall = t.bodySmall.c(),
+        labelLarge = t.labelLarge.c(), labelMedium = t.labelMedium.c(), labelSmall = t.labelSmall.c(),
+    )
+    MaterialTheme(colorScheme = scheme, typography = typography) {
+        CompositionLocalProvider(
+            LocalContentColor provides IconTint,
+            androidx.compose.material3.LocalTextStyle provides typography.bodyLarge,
+            content = content,
+        )
+    }
 }

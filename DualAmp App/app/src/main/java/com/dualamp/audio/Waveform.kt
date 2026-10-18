@@ -9,6 +9,7 @@ import android.util.Log
 import android.util.LruCache
 import com.dualamp.library.Song
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -37,14 +38,39 @@ object Waveform {
 
     fun cached(songId: Long): FloatArray? = memory.get(songId)
 
-    suspend fun load(context: Context, song: Song): FloatArray? = withContext(Dispatchers.Default) {
+    // Decodes run here, not in the caller: the seek bar leaves the screen whenever the song info fades, and that
+    // must not cancel a decode half way (a song taking longer than the fade would never get its waveform).
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Default)
+    private val running = HashMap<Long, kotlinx.coroutines.Deferred<FloatArray?>>()
+
+    suspend fun load(context: Context, song: Song): FloatArray? {
+        memory.get(song.id)?.let { return it }
+        val app = context.applicationContext
+        val job = synchronized(running) {
+            // Only the song now asked for matters: stop reading songs that were skipped.
+            running.entries.removeAll { (id, other) -> if (id != song.id) { other.cancel(); true } else false }
+            running.getOrPut(song.id) {
+                scope.async { readOrDecode(app, song) }.also { job ->
+                    job.invokeOnCompletion { synchronized(running) { if (running[song.id] === job) running.remove(song.id) } }
+                }
+            }
+        }
+        // Cancelled because another song was asked for: no waveform (unless this caller is itself being cancelled).
+        return try { job.await() } catch (e: kotlinx.coroutines.CancellationException) {
+            if (coroutineContext[kotlinx.coroutines.Job]?.isActive != false) null else throw e
+        }
+    }
+
+    private suspend fun readOrDecode(context: Context, song: Song): FloatArray? = withContext(Dispatchers.Default) {
         memory.get(song.id)?.let { return@withContext it }
         val file = File(context.cacheDir, "waveforms/v$CACHE_VERSION/${song.id}.bin")
         readCache(file)?.let { memory.put(song.id, it); return@withContext it }
-        // One decode at a time; a skipped song cancels its own decode.
+        // One decode at a time.
         val bars = decodeLock.withLock {
             try {
-                decode(context, song)
+                // A file the decoder chokes on must not hold up every later song.
+                kotlinx.coroutines.withTimeoutOrNull(60_000) { decode(context, song) }
+                    .also { if (it == null) Log.w(TAG, "No waveform for ${song.path}") }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.w(TAG, "Could not read ${song.path}", e)
@@ -80,54 +106,64 @@ object Waveform {
             var floatPcm = false
             var inputDone = false
             var outputDone = false
+            // Some decoders never flag the end: stop once all input is in and nothing more comes out.
+            var lastOutput = System.nanoTime()
             while (!outputDone) {
                 coroutineContext.ensureActive()
-                if (!inputDone) {
-                    val inIndex = codec.dequeueInputBuffer(5_000)
-                    if (inIndex >= 0) {
-                        val buf = codec.getInputBuffer(inIndex)!!
-                        val size = extractor.readSampleData(buf, 0)
-                        if (size < 0) {
-                            codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                            inputDone = true
-                        } else {
-                            codec.queueInputBuffer(inIndex, 0, size, extractor.sampleTime, 0)
-                            extractor.advance()
-                        }
+                // Hand over every free input buffer without waiting (waiting per frame made this slower than real time).
+                while (!inputDone) {
+                    val inIndex = codec.dequeueInputBuffer(0)
+                    if (inIndex < 0) break
+                    val buf = codec.getInputBuffer(inIndex)!!
+                    val size = extractor.readSampleData(buf, 0)
+                    if (size < 0) {
+                        codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                        inputDone = true
+                    } else {
+                        codec.queueInputBuffer(inIndex, 0, size, extractor.sampleTime, 0)
+                        extractor.advance()
                     }
                 }
-                val outIndex = codec.dequeueOutputBuffer(info, 5_000)
-                when {
-                    outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                        val out = codec.outputFormat
-                        floatPcm = out.containsKey(MediaFormat.KEY_PCM_ENCODING) &&
-                            out.getInteger(MediaFormat.KEY_PCM_ENCODING) == AudioFormat.ENCODING_PCM_FLOAT
-                    }
-                    outIndex >= 0 -> {
-                        if (info.size > 0) {
-                            val bar = (info.presentationTimeUs * BARS / durationUs).toInt().coerceIn(0, BARS - 1)
-                            val buf = codec.getOutputBuffer(outIndex)!!.order(ByteOrder.LITTLE_ENDIAN)
-                            buf.position(info.offset)
-                            buf.limit(info.offset + info.size)
-                            var sum = 0.0
-                            var n = 0
-                            // Every 8th sample is plenty for an outline and keeps this fast.
-                            if (floatPcm) {
-                                val fb = buf.asFloatBuffer()
-                                var i = 0
-                                while (i < fb.limit()) { val v = fb.get(i); sum += v * v; n++; i += 8 }
-                            } else {
-                                val sb = buf.asShortBuffer()
-                                var i = 0
-                                while (i < sb.limit()) { val v = sb.get(i) / 32768.0; sum += v * v; n++; i += 8 }
+                // Then take every decoded buffer that is ready, waiting a moment only for the first.
+                var first = true
+                while (!outputDone) {
+                    val outIndex = codec.dequeueOutputBuffer(info, if (first) 1_000 else 0)
+                    first = false
+                    if (outIndex == MediaCodec.INFO_TRY_AGAIN_LATER) break
+                    when {
+                        outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                            val out = codec.outputFormat
+                            floatPcm = out.containsKey(MediaFormat.KEY_PCM_ENCODING) &&
+                                out.getInteger(MediaFormat.KEY_PCM_ENCODING) == AudioFormat.ENCODING_PCM_FLOAT
+                        }
+                        outIndex >= 0 -> {
+                            lastOutput = System.nanoTime()
+                            if (info.size > 0) {
+                                val bar = (info.presentationTimeUs * BARS / durationUs).toInt().coerceIn(0, BARS - 1)
+                                val buf = codec.getOutputBuffer(outIndex)!!.order(ByteOrder.LITTLE_ENDIAN)
+                                buf.position(info.offset)
+                                buf.limit(info.offset + info.size)
+                                var sum = 0.0
+                                var n = 0
+                                // Every 8th sample is plenty for an outline and keeps this fast.
+                                if (floatPcm) {
+                                    val fb = buf.asFloatBuffer()
+                                    var i = 0
+                                    while (i < fb.limit()) { val v = fb.get(i); sum += v * v; n++; i += 8 }
+                                } else {
+                                    val sb = buf.asShortBuffer()
+                                    var i = 0
+                                    while (i < sb.limit()) { val v = sb.get(i) / 32768.0; sum += v * v; n++; i += 8 }
+                                }
+                                sums[bar] += sum
+                                counts[bar] += n
                             }
-                            sums[bar] += sum
-                            counts[bar] += n
+                            codec.releaseOutputBuffer(outIndex, false)
+                            if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true
                         }
-                        codec.releaseOutputBuffer(outIndex, false)
-                        if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true
                     }
                 }
+                if (inputDone && !outputDone && System.nanoTime() - lastOutput > 3_000_000_000L) break
             }
             // Normalise to the loudest bar, with a gentle curve so quiet parts still show.
             // Average loudness (RMS) per slice, normalised so loud and quiet sections stand apart.

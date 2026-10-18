@@ -2,6 +2,7 @@ package com.dualamp.ui.library
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.snapping.SnapPosition
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
@@ -31,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -38,6 +40,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -54,6 +57,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.dualamp.ui.Accent
+import com.dualamp.ui.IconTint
+import com.dualamp.ui.TextMain
 import com.dualamp.ui.Surface1
 import com.dualamp.ui.Surface3
 import com.dualamp.ui.TextDim
@@ -104,15 +109,19 @@ internal fun CoverFlow(
             )
         }
         if (actions.isNotEmpty()) {
+            // One line; on a narrow screen (single-screen, portrait) the row scrolls sideways instead of wrapping.
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
             ) {
                 actions.forEach { (i, e) ->
                     Text(
                         e.title,
                         style = MaterialTheme.typography.labelLarge,
-                        color = Color.White,
+                        color = TextMain,
+                        maxLines = 1,
+                        softWrap = false,
                         modifier = Modifier
                             .highlight(padActive && cursor == i)
                             .background(Surface3, RoundedCornerShape(50))
@@ -156,6 +165,36 @@ internal fun CoverFlow(
                 if (pos > 0) state.scrollToItem(pos)
             }
 
+            // Gamepad on the covers: a soft glow behind the centre cover (Settings > Cover Flow glow).
+            val onCovers = padActive && covers.any { it.index == cursor }
+            // 0-100 %: how strong; above 100 % it also spreads wider and stays bright further out.
+            val glowStrength = com.dualamp.settings.Prefs.coverGlowOpacity.state.collectAsState().value / 100f
+            val glowAlpha = glowStrength.coerceAtMost(1f)
+            val glowExtra = (glowStrength - 1f).coerceAtLeast(0f)
+            val glowColor = com.dualamp.ui.AppTheme.glow()
+            val glowShape = com.dualamp.settings.Prefs.coverGlowShape.state.collectAsState().value
+            // Pop-in when the gamepad reaches the covers (Settings > Cover Flow glow animation): grows from the
+            // centre, or drops in from under the tabs, in 0.35 s.
+            val glowAnim = com.dualamp.settings.Prefs.coverGlowAnim.state.collectAsState().value
+            val appear = remember { androidx.compose.animation.core.Animatable(0f) }
+            LaunchedEffect(onCovers, glowAnim) {
+                if (!onCovers) appear.snapTo(0f)
+                else if (glowAnim == "None") appear.snapTo(1f)
+                else appear.animateTo(1f, androidx.compose.animation.core.tween(350, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+            }
+            if (onCovers && glowAlpha > 0f) {
+                val dropPx = with(density) { (maxHeight / 2 + coverDp).toPx() }
+                CoverGlow(
+                    glowShape, listOf(glowColor.copy(alpha = glowAlpha), glowColor.copy(alpha = glowAlpha * (0.35f + 0.5f * glowExtra)), Color.Transparent),
+                    Modifier.align(Alignment.Center).requiredSize(coverDp * (1.8f + 0.5f * glowExtra), coverDp * (2.15f + 0.5f * glowExtra)).graphicsLayer {
+                        val p = appear.value
+                        when (glowAnim) {
+                            "Expand" -> { scaleX = 0.05f + 0.95f * p; scaleY = scaleX; alpha = p.coerceIn(0f, 1f) }
+                            "Drop" -> { translationY = -dropPx * (1f - p); alpha = p.coerceIn(0f, 1f) }
+                        }
+                    },
+                )
+            }
             LazyRow(
                 state = state,
                 contentPadding = PaddingValues(horizontal = sidePad),
@@ -232,7 +271,7 @@ internal fun CoverFlow(
                     Spacer(Modifier.width(4.dp))
                 }
                 Text(current?.title.orEmpty(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    maxLines = 1, modifier = Modifier.scrollIfLong())
             }
             Text(
                 listOfNotNull(current?.subtitle?.ifBlank { null }, if (covers.size > 1) "$position of ${covers.size}" else null).joinToString(" · "),
@@ -255,6 +294,10 @@ private fun Modifier.reflection(background: Color): Modifier = drawWithContent {
     val h = size.height
     val gap = 2.dp.toPx()
     val depth = h * 0.35f
+    // The mirrored copy fades out to transparent (in its own layer), so whatever is behind, like the
+    // Cover Flow glow, still shows through below the cover.
+    val area = androidx.compose.ui.geometry.Rect(0f, h + gap, size.width, h + gap + depth)
+    drawContext.canvas.saveLayer(area, androidx.compose.ui.graphics.Paint())
     clipRect(top = h + gap, bottom = h + gap + depth) {
         withTransform({
             translate(top = h + gap)
@@ -264,8 +307,39 @@ private fun Modifier.reflection(background: Color): Modifier = drawWithContent {
         }
     }
     drawRect(
-        Brush.verticalGradient(listOf(background.copy(alpha = 0.6f), background), startY = h + gap, endY = h + gap + depth),
+        Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.4f), Color.Transparent), startY = h + gap, endY = h + gap + depth),
         topLeft = Offset(0f, h + gap),
         size = Size(size.width, depth),
+        blendMode = androidx.compose.ui.graphics.BlendMode.DstIn,
     )
+    drawContext.canvas.restore()
+}
+
+/**
+ * Cover Flow's glow (Settings > Cover Flow glow shape), drawn in a tall box around the cover so each shape
+ * reaches out past it: Circle, Oval (tall), Diamond (tall), or Cross / X (two long thin diamonds crossed).
+ */
+@Composable
+private fun CoverGlow(shape: String, colors: List<Color>, modifier: Modifier) {
+    val soft = if (shape == "Circle" || shape == "Oval") modifier
+        else modifier.blur(8.dp, androidx.compose.ui.draw.BlurredEdgeTreatment.Unbounded)
+    androidx.compose.foundation.Canvas(soft) {
+        val w = size.width
+        val h = size.height
+        val c = center
+        fun glow(radius: Float) = androidx.compose.ui.graphics.Brush.radialGradient(colors, c, radius)
+        fun diamond(halfWidth: Float, halfHeight: Float) = androidx.compose.ui.graphics.Path().apply {
+            moveTo(c.x, c.y - halfHeight); lineTo(c.x + halfWidth, c.y); lineTo(c.x, c.y + halfHeight); lineTo(c.x - halfWidth, c.y); close()
+        }
+        when (shape) {
+            "Oval" -> withTransform({ scale(0.62f, 1f, c) }) { drawCircle(glow(h / 2f), radius = h / 2f) }
+            "Diamond" -> drawPath(diamond(w * 0.46f, h / 2f), glow(h / 2f))
+            "Cross / X" -> {
+                val thin = diamond(w * 0.09f, h / 2f)
+                withTransform({ rotate(30f, c) }) { drawPath(thin, glow(h / 2f)) }
+                withTransform({ rotate(-30f, c) }) { drawPath(thin, glow(h / 2f)) }
+            }
+            else -> drawCircle(glow(w / 2f), radius = w / 2f)
+        }
+    }
 }

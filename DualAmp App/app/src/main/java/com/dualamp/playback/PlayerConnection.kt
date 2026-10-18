@@ -203,6 +203,13 @@ object PlayerConnection {
         Prefs.queueIndex.value = s.queueIndex
     }
 
+    /** Quitting DualAmp: stop the music (the position is kept for next time). */
+    fun stopForQuit() {
+        savePosition()
+        controller?.pause()
+        controller?.stop()
+    }
+
     fun savePosition() {
         val c = controller ?: return
         Prefs.queuePositionMs.value = c.currentPosition.toInt()

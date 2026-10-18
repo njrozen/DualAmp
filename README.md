@@ -1,27 +1,67 @@
 # DualAmp
 
-A dual-screen music player for the Ayn Thor (and other dual-display Android handhelds).
+A music player made with the **AYN Thor** and its two screens in mind. It works on single-screen Android devices
+(phones, tablets, other handhelds) as well: there it puts everything on one screen.
 
 - **Top screen:** now playing. A full-screen MilkDrop visualizer with album art, title, artist, album, year,
-  genre, format, a seek bar and controls on top of it. The info fades out after a few seconds of no input,
+  genre, format, a waveform seek bar and controls on top of it. The info fades out after a few seconds (or never),
   leaving just the visualizer. Tap the screen (or press any controller button) to bring it back.
-- **Bottom screen:** your library, laid out like Spotify's: category chips (Playlists, Artists, Albums, Songs,
-  Genres, Years, Folders, Queue), a sort menu, and a view switch that cycles **List → Grid → Cover Flow →
-  Compact**. Drill-down works like an iPod: Artist → their albums and singles → tracks.
-  Cover Flow works on every page: artists, an artist's albums, an album's tracks, playlists, genres, years and folders.
+- **Bottom screen:** your library, laid out like Spotify's: category chips (Playlists, Artists, Albums, Singles, Songs,
+  Genres, Years, Folders, Queue), a sort menu, and three views: **List, Grid and Cover Flow**. Drill-down works like an
+  iPod: Artist → their albums and singles → tracks. Long names scroll so you can read all of them.
 
-On a device with one screen (a phone, or a handheld with its second screen off) it opens in single-screen mode: both halves
-on one screen (stacked in portrait, side by side in landscape).
+**Version 1.1** · made by njrozen and Claude.
 
-**Version 1.0** · made by njrozen and Claude.
+| Both screens: now playing on top, the library below (here in Cover Flow) |
+|:---:|
+| ![Both screens, Cover Flow](screenshots/both-screens-cover-flow.png) |
+
+| Equalizer | Visualizers |
+|:---:|:---:|
+| ![Both screens, Equalizer tab](screenshots/both-screens-equalizer.png) | ![Both screens, Visualizers tab](screenshots/both-screens-visualizers.png) |
+
+| Single-screen on the top screen (landscape) | Single-screen on the bottom screen (portrait) |
+|:---:|:---:|
+| ![Single-screen mode on the top screen, landscape](screenshots/single-screen-top-landscape.png) | ![Single-screen mode on the bottom screen, portrait](screenshots/single-screen-bottom-portrait.png) |
+
+## Screens, landscape and portrait
+
+- **Settings > Use both screens** chooses how DualAmp uses the Thor's screens:
+  - **Both Screens** (default): now playing on the top screen, the library on the bottom one.
+  - **Top Screen** or **Bottom Screen**: single-screen mode, with now playing and the library together on that screen.
+- **Single-screen mode** is also what you get on a device with one screen, and when you open DualAmp from the bottom
+  screen's launcher or as a Cocoon companion app (Settings then shows Bottom Screen). In landscape the player and the
+  library sit side by side; in portrait the player is on top and the library below.
+  **Settings > Swap sides (single-screen)** puts the library on the left (landscape) or on top (portrait). The grid has
+  its own size in single-screen mode (3 per row by default).
+- **Settings > Swap screens** is for devices whose screens open the wrong way round (both-screens mode).
+- **Settings > Screen orientation:** Auto (follows how you hold the device), Landscape or Portrait (either way up).
+  Both screens always turn together. In portrait the D-pad turns with the screen, so up on the D-pad is always up on
+  screen.
+
+## What's new in 1.1
+
+- **Screens:** Both Screens / Top Screen / Bottom Screen, single-screen mode in landscape and portrait, Swap sides,
+  and both screens turning together (Auto, Landscape or Portrait). The single-screen player fits its half of the
+  screen, and long titles, artists and visualizer names scroll.
+- **Library views:** List, Grid and Cover Flow on every page. One view everywhere, or separate views for the
+  categories and the pages inside them; the view to start with; grid size 3-6 per row.
+- **Looks:** themes (Default, Light, OLED black, Midnight) with an accent color, and a Cover Flow glow behind the
+  selected cover (color, shape, strength and how it appears).
+- **Controls:** L3 changes the library view (hold to clear the queue); hold R2 / L2 to fast forward / rewind, also
+  with the lid closed; L2 can pick a random visualizer.
+- **Volume on the Thor:** both screens use the top screen's volume; single-screen mode uses the volume of the
+  screen DualAmp is on.
+- **Other:** song info fades after 3-30 s or never; Visualizer reactivity setting; quitting DualAmp stops the music;
+  waveforms now load for every song; settings are grouped into sections.
 
 ## Installing
 
-Download from the [latest release](https://github.com/njrozen/DualAmp/releases/latest): **DualAmp-1.0.apk** (the app) and,
+Download from the [latest release](https://github.com/njrozen/DualAmp/releases/latest): **DualAmp-1.1.apk** (the app) and,
 optionally, **DualAmp-Server.exe** (for playing your PC's music).
 
-1. Copy `DualAmp-1.0.apk` to the Thor (or any Android 11+ device) and open it (allow installing from your file manager when asked), or from a PC:
-   `adb install DualAmp-1.0.apk`.
+1. Copy `DualAmp-1.1.apk` to the Thor (or any Android 11+ device) and open it (allow installing from your file manager when asked), or from a PC:
+   `adb install DualAmp-1.1.apk`. It installs over 1.0 and keeps your settings and playlists.
 2. Start DualAmp. It asks for your music folder, offers the shoulder-button permission, then shows the help guide
    (Settings > Help opens it again).
 3. Optional, for the lid-closed buttons: Settings > Lid-closed buttons, and turn on DualAmp under
@@ -56,12 +96,13 @@ All of these can be installed from Android Studio's SDK Manager.
 | A | Open / play |
 | B | Back |
 | Y (or long-press) | Item menu: play next, add to queue, add to playlist, like, go to album/artist |
-| X / R2 | Play / pause (R2 also works asleep, see below) |
+| X / R2 | Play / pause (R2 also works asleep, see below). Hold R2: fast forward |
 | Start | Settings (press again to close); hold for the visualizer folders |
 | L1 / R1 | Previous / next track (also asleep) |
-| L2 | Next visualizer, or a random one from the folder (Settings > L2 button) |
+| L2 | Next visualizer, or a random one from the folder (Settings > L2 button). Hold: rewind |
 | Playlist button (next to Like, top screen) | Add the playing song to a playlist |
 | Select | Next tab (PC, Library, Equalizer); hold to search with the keyboard open |
+| L3 | Next library view (grid, list, Cover Flow); hold to clear the queue (asks first) |
 | R3 | Show or hide the song info |
 
 The controller works whichever screen you touched last.
@@ -79,9 +120,17 @@ last second or so, so presets jump harder; below 100 % calms them. What you hear
 locked (the lock button on the top screen). Settings > Visualizers lets you make your own folders of presets
 (Y / long-press a preset > Add to visualizer folder) and "Use only this folder".
 
+**Rotation:** see [Screens, landscape and portrait](#screens-landscape-and-portrait). Alone on the bottom screen,
+DualAmp turns with the motion sensor and follows the system's auto-rotate switch.
+
+**Volume on the Ayn Thor:** the Thor has a volume for each screen. With both screens DualAmp uses the top screen's
+volume (even while you browse the library below); in single-screen mode it uses the volume of the screen it is on
+(e.g. the bottom screen as a Cocoon companion app). Apps such as Thor Volume Link still decide which screen the
+volume buttons change.
+
 **Two screens, one app:** closing either screen closes both, Home on either screen sends both to the home menu, and
 reopening either screen (from recents) brings both back.
-Music keeps playing in the background either way (notification controls stay available).
+Music keeps playing in the background (notification controls stay available); quitting DualAmp stops it.
 
 **First launch:** DualAmp asks for your music folder, then offers to turn on the asleep shoulder buttons (Accessibility).
 Both can be skipped and done later in Settings.
@@ -93,7 +142,7 @@ remove). Playlist files (.m3u) inside those folders are hidden unless you turn t
 
 **When the queue runs out:** after a song list, search result or single song, a random library song plays next.
 Albums and playlists just end. Next (R1 or the button) always keeps going with a random song. The Queue tab shows only
-what is up next (the playing song is the header). L3 or "Clear
+what is up next (the playing song is the header). Holding L3 or "Clear
 queue" on the Queue tab removes everything else but keeps the current song playing (it asks first).
 
 **Top-screen visualizer menus:** the folder button picks what the visualizer cycles through: all presets, a
@@ -101,6 +150,13 @@ visualizer type (Dancer, Drawing, Geometric, ...) or one of your folders. Tap th
 
 **Tabs:** PC music, Library and Equalizer sit in the header next to the title, as icons (the title names the tab you are
 in; Select switches between them). Settings is the gear at the top right. The equalizer preset is a drop-down list.
+
+**Theme:** Settings > Theme picks the look of the bottom screen (Default, Light, OLED black, Midnight), and Accent its
+highlight color. The accent also colors like / shuffle / repeat on the top screen;
+the visualizer buttons keep their purple. In Cover Flow, the cover the gamepad is on has a soft glow behind it
+(Settings > Cover Flow glow: Auto is white, or black in the Light theme, or one of many colors; a shape: circle,
+tall oval, tall diamond or cross / X; strength 0-200 %; and how it appears: expand from the centre, drop in from the
+top, or none).
 
 **Search keyboard (gamepad):** D-pad + A type, X delete, Y space, L1 / R1 move the cursor, L2 letters / numbers and symbols, Start done, B close (with nothing typed, B leaves search).
 
@@ -214,7 +270,6 @@ Run `server/build.cmd`: it compiles `DualAmp Server.exe` with the C# compiler th
 
 ## Other options
 
-- Launching DualAmp fresh from the bottom screen's launcher (or as a Cocoon companion app) runs it single-screen there.
 - Lid-closed shoulder buttons (Settings > Lid-closed buttons): when the lid closes during playback, DualAmp keeps the screen on
-  (black, dimmest) so L1 / R1 / R2 keep working; opening the lid (detected with the Thor's lid sensor) brings the screen back,
+  (black, dimmest) so L1 / R1 / R2 keep working (hold R2 / L2 to fast forward / rewind); opening the lid (detected with the Thor's lid sensor) brings the screen back,
   and so does a tap. After 2 minutes paused with the lid shut, the screen is allowed to sleep. Uses more battery while on.

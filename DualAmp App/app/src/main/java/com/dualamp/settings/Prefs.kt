@@ -41,11 +41,12 @@ object Prefs {
         }
     }
 
-    /** Use both screens when a second display exists. */
-    val dualScreen = Setting("dual_screen", true)
+    /** Which screens DualAmp uses when there are two: BOTH, TOP or BOTTOM (everything on that one screen). */
+    val screens = Setting("screens", "BOTH")
     /** Put the library on the default display and now-playing on the second one. */
     val swapScreens = Setting("swap_screens", false)
     /** Seconds before the song info fades out on the top screen. 0 = never. */
+    /** Seconds before the song info fades to the visualizer (3-30; 2 or less = never). */
     val overlayTimeoutSec = Setting("overlay_timeout", 4)
     /** When the visualizer moves to a new preset: INTERVAL, SONG (on track change) or LOCKED. */
     val presetMode = Setting("preset_mode", "INTERVAL")
@@ -100,6 +101,30 @@ object Prefs {
     // Library browser state, remembered between launches.
     val libraryCategory = Setting("lib_category", "ALBUMS")
     val viewModes = Setting("lib_view_modes", "")
+    // Theme (see AppTheme): names of the chosen colors.
+    val themeBackground = Setting("theme_background", "Dark")
+    val themeText = Setting("theme_text", "White")
+    val themeSubText = Setting("theme_subtext", "Gray")
+    val themeAccent = Setting("theme_accent", "Green")
+    val themeIcon = Setting("theme_icon", "White")
+    /** Cover Flow: the glow behind the cover the gamepad is on. */
+    val coverGlowColor = Setting("cover_glow_color", "Auto")
+    /** Circle, Oval, Diamond or "Cross / X". */
+    val coverGlowShape = Setting("cover_glow_shape", "Circle")
+    /** How the glow appears: Expand, Drop or None. */
+    val coverGlowAnim = Setting("cover_glow_anim", "Expand")
+    /** Library view on app launch for the categories / the pages inside them: Grid, List, Cover Flow or "Last used". */
+    val launchViewRoot = Setting("launch_view_root", "Last used")
+    val launchViewPage = Setting("launch_view_page", "Last used")
+    val coverGlowOpacity = Setting("cover_glow_opacity", 50)
+    /** Grid view: squares per row (3-6). */
+    val gridColumns = Setting("grid_columns", 4)
+    /** The same in single-screen mode (half a screen, so fewer per row). */
+    val gridColumnsSingle = Setting("grid_columns_single", 3)
+    /** Single-screen mode: library on the left (landscape) / top (portrait), player on the other side. */
+    val singleSwap = Setting("single_swap", false)
+    /** One view for the library categories and the pages inside them (an artist, album, playlist...). */
+    val sameViewEverywhere = Setting("same_view_everywhere", true)
     val sortModes = Setting("lib_sort_modes", "")
 
     // Last queue, restored on the next launch.
@@ -110,14 +135,16 @@ object Prefs {
     private val all = listOf(
         musicFolders, serverUrl, showPlaylistFiles, infoBackdrop, vizEnabled, lidButtons, orientation, showControlsAtLaunch, onboardingDone,
         dspEnabled, dspPreamp, dspBass, dspTreble, dspBalance, dspWidth, dspMono, dspLimiter,
-        dualScreen, swapScreens, overlayTimeoutSec, presetMode, presetDurationSec, vizReactivity, activeVizFolder, shufflePresets, l2Random, hardCuts,
-        vizQuality, vizFpsCap, showPresetName, libraryCategory, viewModes, sortModes,
+        screens, swapScreens, overlayTimeoutSec, presetMode, presetDurationSec, vizReactivity, activeVizFolder, shufflePresets, l2Random, hardCuts,
+        vizQuality, vizFpsCap, showPresetName, libraryCategory, viewModes, themeBackground, themeText, themeSubText, themeAccent, themeIcon, coverGlowColor, coverGlowShape, coverGlowAnim, launchViewRoot, launchViewPage, coverGlowOpacity, gridColumns, gridColumnsSingle, singleSwap, sameViewEverywhere, sortModes,
         queueIds, queueIndex, queuePositionMs,
     ) + eqBands
 
     fun init(context: Context) {
         sp = context.getSharedPreferences("dualamp", Context.MODE_PRIVATE)
         all.forEach { it.load() }
+        // 1.0 had an on/off "Use both screens": off meant everything on the top screen.
+        if (!sp.contains("screens") && !sp.getBoolean("dual_screen", true)) screens.value = "TOP"
     }
 
     /** Small "key=value;key=value" map stored in one string pref. */
@@ -127,5 +154,23 @@ object Prefs {
     fun mapPut(setting: Setting<String>, key: String, value: String) {
         val entries = setting.value.split(';').filter { it.isNotBlank() && !it.startsWith("$key=") }
         setting.value = (entries + "$key=$value").joinToString(";")
+    }
+}
+
+/** The library's view settings: "root" = the categories (Playlists, Artists...), "page" = pages inside them. */
+object LibraryView {
+    fun key(root: Boolean): String = if (Prefs.sameViewEverywhere.value) "all" else if (root) "root" else "page"
+    fun get(root: Boolean): String = Prefs.mapGet(Prefs.viewModes, key(root)) ?: "GRID"
+    fun set(root: Boolean, view: String) = Prefs.mapPut(Prefs.viewModes, key(root), view)
+}
+
+/** At app launch: Settings > Launch view (unless "Last used") sets the library views. */
+fun applyLaunchViews() {
+    val names = mapOf("Grid" to "GRID", "List" to "LIST", "Cover Flow" to "COVERFLOW")
+    if (Prefs.sameViewEverywhere.value) {
+        names[Prefs.launchViewRoot.value]?.let { LibraryView.set(true, it) }
+    } else {
+        names[Prefs.launchViewRoot.value]?.let { LibraryView.set(true, it) }
+        names[Prefs.launchViewPage.value]?.let { LibraryView.set(false, it) }
     }
 }

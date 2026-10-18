@@ -8,3 +8,6 @@ DualAmp App/app/src/main/assets/presets/
 # Release downloads go on the GitHub Releases page, not in the repository.
 *.apk
 DualAmp Server.exe
+
+# Screenshots that were not picked for the README.
+screenshots-candidates/

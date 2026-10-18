@@ -12,6 +12,8 @@ class DualAmpApp : Application() {
     override fun onCreate() {
         super.onCreate()
         Prefs.init(this)
+        com.dualamp.ui.AppTheme.load()
+        com.dualamp.settings.applyLaunchViews()
         PlaylistStore.init(this)
         PresetManager.init(this)
         VizFolders.init(this)

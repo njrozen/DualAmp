@@ -50,6 +50,22 @@
             android:resizeableActivity="true"
             android:taskAffinity="com.dualamp.top" />
 
+        <!-- Invisible, for a moment on the top screen: makes the Thor use the top screen's volume (ScreenAudioFocus). -->
+        <activity
+            android:name=".playback.TopFocusActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity="com.dualamp.top"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <activity
+            android:name=".playback.SingleFocusActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity="com.dualamp.single"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- Single-screen mode, when DualAmp is opened on the bottom screen (e.g. as a Cocoon companion). -->
         <activity
             android:name=".SingleScreenActivity"

@@ -21,8 +21,8 @@ android {
         applicationId = "com.dualamp"
         minSdk = 30
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.0"
+        versionCode = 11
+        versionName = "1.1"
 
         ndk {
             // The Ayn Thor is arm64. x86_64 is kept so the app also runs in the emulator.
@@ -46,6 +46,10 @@ android {
     }
 
     buildTypes {
+        // Test builds use the same key, so they install over the published app without losing its data.
+        debug {
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+        }
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

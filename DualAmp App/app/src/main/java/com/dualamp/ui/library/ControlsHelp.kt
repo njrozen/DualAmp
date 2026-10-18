@@ -35,6 +35,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.dualamp.ui.Accent
+import com.dualamp.ui.IconTint
+import com.dualamp.ui.TextMain
 import com.dualamp.ui.Surface2
 import com.dualamp.ui.TextDim
 
@@ -48,14 +50,20 @@ object ControlsHelp {
         "Welcome to DualAmp" to listOf(
             "Two screens" to "The top screen shows what's playing over a MilkDrop visualizer; the bottom screen is your library",
             "Your music" to "Add the folders that hold your music in Settings > Music folders. New files appear after a rescan",
-            "One screen" to "Open DualAmp on the bottom screen (or as a Cocoon companion app) for a single-screen player",
+            "Rotation" to "Auto orientation turns both screens; in portrait the D-pad turns with the screen",
+            "Single-screen" to "Settings > Swap sides moves the library to the left / top; the grid has its own size there",
+            "Volume" to "On the Thor, both screens: the top screen's volume. Single-screen: the volume of the screen DualAmp is on",
+            "One screen" to "Settings > Use both screens: Top or Bottom Screen. Opening DualAmp on the bottom screen (or as a Cocoon companion app) also runs it there alone",
         ),
         "Library" to listOf(
             "Tabs" to "Playlists, Liked Songs, Artists, Albums, Singles, Songs, Genres, Years, Folders and the Queue",
             "Search" to "The magnifier, top right. Artists come first, then albums, then song titles, then everything else",
             "Singles" to "A song alone on a release of the same name. A lone song from a bigger album still counts as an album",
             "Artist pages" to "All releases, Albums and Singles, newest first",
-            "Views" to "List, grid, Cover Flow or compact; sort by name, artist, year, date added and more",
+            "Cover Flow glow" to "A glow behind the cover the gamepad is on: color, shape (circle, oval, diamond, cross), strength and pop-in animation in Settings",
+            "Launch view" to "Settings > View on launch: start in grid, list or Cover Flow, or keep whatever you used last",
+            "Theme" to "Settings > Theme: Default, Light, OLED black or Midnight, and the accent color",
+            "Views" to "Grid (3 to 6 per row), list or Cover Flow: Settings > Library view, shared everywhere or separate for categories and the pages inside them; sort by name, artist, year, date added and more",
             "Playlists" to "Create, rename and fill them from any item's menu. Playlist files in your folders show up too",
             "Queue" to "Play next / add to queue from any menu. Clearing keeps the current song",
         ),
@@ -79,7 +87,7 @@ object ControlsHelp {
             "Not connecting" to "A pop-up tells you within a few seconds. Keep the server window open, use the same Wi-Fi, and allow it in Windows Firewall",
         ),
         "Lid closed" to listOf(
-            "Buttons" to "With Settings > Lid-closed buttons on, L1 / R1 skip and R2 plays / pauses with the lid shut",
+            "Buttons" to "With Settings > Lid-closed buttons on, L1 / R1 skip and R2 plays / pauses with the lid shut; hold R2 / L2 to fast forward / rewind",
             "Screen off" to "With Shoulder buttons while asleep on, a press wakes the Thor, acts, and puts it back to sleep",
         ),
     )
@@ -90,11 +98,11 @@ object ControlsHelp {
             "A" to "Open / play the selected item",
             "B" to "Back (also closes search)",
             "Y" to "Menu for the selected item: play next, add to queue, add to playlist…",
-            "X / R2" to "Play / pause",
+            "X / R2" to "Play / pause. Hold R2: fast forward",
             "Start" to "Settings (press again to close). Hold: visualizer folders",
             "L1 / R1" to "Previous / next song",
-            "L2" to "Next visualizer, or a random one (Settings > L2 button)",
-            "L3 (press left stick)" to "Clear the queue, keeping the current song (asks first)",
+            "L2" to "Next visualizer, or a random one (Settings > L2 button). Hold: rewind",
+            "L3 (press left stick)" to "Next library view (grid, list, Cover Flow). Hold: clear the queue, keeping the current song (asks first)",
             "R3 (press right stick)" to "Show / hide the song info on the top screen",
             "Select" to "Next tab: PC, Library, Equalizer. Hold: search with the keyboard open",
         ),
@@ -112,14 +120,14 @@ object ControlsHelp {
             "Tap" to "Open / play",
             "Long-press" to "Item menu (same as Y)",
             "Select multiple (in the item menu)" to "Then tap / A to tick more songs, albums or artists; the bar adds them all to the queue or a playlist",
-            "View button" to "List, grid, Cover Flow or compact view",
+            "View button" to "List, grid or Cover Flow; the library categories share one view",
             "Player bar" to "Add to playlist, previous, play/pause, next; tap the song for the queue, long-press it for album / artist",
             "Search / name keyboard" to "D-pad + A type, X delete, Y space, L1/R1 move cursor, L2 letters / symbols, Start done, B close (nothing typed: leaves search)",
             "Header tabs" to "PC music, Library and Equalizer, shown as icons (the title says which one you are in)",
             "Header buttons" to "Search; visualizer folders and Settings, each its own tab (press again to go back). The DualAmp logo shows About",
         ),
         "With the screen off or lid closed" to listOf(
-            "L1 / R1 / R2" to "Previous / next / play-pause",
+            "L1 / R1 / R2" to "Previous / next / play-pause. Lid shut: hold R2 / L2 to fast forward / rewind",
             "Needs" to "Settings > Lid-closed buttons, and Shoulder buttons while asleep (Accessibility)",
         ),
     )
@@ -133,10 +141,12 @@ internal fun ControlsOverlay(
     onClose: () -> Unit,
     listState: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(),
 ) {
-    Box(
+    androidx.compose.foundation.layout.BoxWithConstraints(
         Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.7f)).clickable(onClick = onClose),
         contentAlignment = Alignment.Center,
     ) {
+        // Narrow (half of the bottom screen in single-screen mode): each control above its description.
+        val narrow = maxWidth < 420.dp
         Surface(
             color = Surface2,
             shape = RoundedCornerShape(16.dp),
@@ -156,7 +166,10 @@ internal fun ControlsOverlay(
                                 modifier = Modifier.padding(top = 10.dp, bottom = 4.dp))
                         }
                         items(rows) { (control, what) ->
-                            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                            if (narrow) Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                                Text(control, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                Text(what, color = TextDim, style = MaterialTheme.typography.bodyMedium)
+                            } else Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
                                 Text(control, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,
                                     modifier = Modifier.width(150.dp))
                                 Spacer(Modifier.width(8.dp))
@@ -165,16 +178,22 @@ internal fun ControlsOverlay(
                         }
                     }
                 }
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
+                val dontShow: @Composable () -> Unit = {
                     Row(Modifier.clickable(onClick = onToggleDontShow), verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = dontShowAgain, onCheckedChange = { onToggleDontShow() },
                             colors = CheckboxDefaults.colors(checkedColor = Accent))
                         Text("Don't show again (Y)", style = MaterialTheme.typography.bodyMedium)
                     }
+                }
+                if (narrow) Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalAlignment = Alignment.End) {
+                    Row(Modifier.fillMaxWidth()) { dontShow() }
+                    Button(onClick = onClose) { Text("Got it (A)") }
+                } else Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    dontShow()
                     Button(onClick = onClose) { Text("Got it (A)") }
                 }
             }
@@ -214,7 +233,7 @@ internal fun PromptOverlay(title: String, body: String, primary: String, seconda
                 Text(body, color = TextDim, style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.heightIn(min = 16.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.material3.TextButton(onClick = onSecondary) { Text(secondary, color = Color.White) }
+                    androidx.compose.material3.TextButton(onClick = onSecondary) { Text(secondary, color = TextMain) }
                     Spacer(Modifier.width(8.dp))
                     Button(onClick = onPrimary) { Text(primary) }
                 }

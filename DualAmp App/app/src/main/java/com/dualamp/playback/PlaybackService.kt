@@ -49,11 +49,13 @@ class PlaybackService : MediaSessionService() {
                     .setUsage(C.USAGE_MEDIA)
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                     .build(),
-                /* handleAudioFocus = */ true,
+                // Audio focus is handled by ScreenAudioFocus (so the Thor applies the right screen's volume).
+                /* handleAudioFocus = */ false,
             )
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
+        ScreenAudioFocus.attach(this, player)
         // A PC song that can't load almost always means the PC went away: tell the user.
         player.addListener(object : androidx.media3.common.Player.Listener {
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -101,6 +103,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        ScreenAudioFocus.release()
         session?.run {
             player.release()
             release()

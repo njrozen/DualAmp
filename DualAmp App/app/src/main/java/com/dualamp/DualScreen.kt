@@ -27,7 +27,26 @@ object DualScreen {
 
     /** True when the now-playing and library screens should be separate activities. */
     fun isDualActive(context: Context): Boolean =
-        Prefs.dualScreen.value && secondaryDisplay(context) != null
+        Prefs.screens.value == "BOTH" && secondaryDisplay(context) != null
+
+    val screenOptions = listOf("BOTH", "TOP", "BOTTOM")
+    fun screensLabel(value: String) = when (value) {
+        "TOP" -> "Top Screen"
+        "BOTTOM" -> "Bottom Screen"
+        else -> "Both Screens"
+    }
+
+    /**
+     * The screens DualAmp is actually using right now (BOTH, TOP or BOTTOM), set when its screen opens. It can
+     * differ from Settings: opened on the bottom screen (e.g. as a Cocoon companion app), it runs there alone.
+     */
+     var running: String? = null
+
+    /** Opens DualAmp on one screen only (now playing and the library together). */
+    fun launchSingle(context: Context, displayId: Int) {
+        AppEvents.closeDual()
+        launchOn(context, SingleScreenActivity::class.java, displayId)
+    }
 
     fun topDisplayId(context: Context): Int {
         val second = secondaryDisplay(context) ?: return Display.DEFAULT_DISPLAY
@@ -41,12 +60,17 @@ object DualScreen {
 
     /** Opens now-playing on the top screen and the library on the bottom one (or one combined screen). */
     fun launchAll(context: Context) {
-        if (!isDualActive(context)) {
+        if (secondaryDisplay(context) == null) {
             context.startActivity(
                 Intent(context, NowPlayingActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
             return
         }
+        when (Prefs.screens.value) {
+            "TOP" -> { launchSingle(context, topDisplayId(context)); return }
+            "BOTTOM" -> { launchSingle(context, bottomDisplayId(context)); return }
+        }
+        AppEvents.closeSingle()
         launchOn(context, NowPlayingActivity::class.java, topDisplayId(context))
         // Launched last so the bottom screen starts with input focus for the gamepad.
         launchOn(context, LibraryActivity::class.java, bottomDisplayId(context))

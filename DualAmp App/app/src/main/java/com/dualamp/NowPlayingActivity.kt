@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -64,7 +65,7 @@ open class NowPlayingActivity : ComponentActivity() {
         }
         // Home on the other screen: step aside here too, so both screens show the home menu.
         lifecycleScope.launch { AppEvents.toBackground.collect { moveTaskToBack(true) } }
-        Orientation.follow(this)
+        Orientation.follow(this, single = singleScreen)
         lifecycleScope.launch {
             // Keep the screen awake while music plays, like a dedicated player.
             PlayerConnection.state.collect { s ->
@@ -83,16 +84,20 @@ open class NowPlayingActivity : ComponentActivity() {
                 if (dual) {
                     NowPlayingScreen(Modifier.fillMaxSize())
                 } else {
+                    // Settings > Swap sides (single-screen): library first (left / top), player second.
+                    val swap = com.dualamp.settings.Prefs.singleSwap.state.collectAsState().value
                     BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
                         if (maxWidth > maxHeight) {
                             Row(Modifier.fillMaxSize()) {
+                                if (swap) LibraryScreen(Modifier.weight(0.5f), showMiniPlayer = false)
                                 NowPlayingScreen(Modifier.weight(0.5f))
-                                LibraryScreen(Modifier.weight(0.5f), showMiniPlayer = false)
+                                if (!swap) LibraryScreen(Modifier.weight(0.5f), showMiniPlayer = false)
                             }
                         } else {
                             Column(Modifier.fillMaxSize()) {
+                                if (swap) LibraryScreen(Modifier.weight(0.58f), showMiniPlayer = false)
                                 NowPlayingScreen(Modifier.weight(0.42f))
-                                LibraryScreen(Modifier.weight(0.58f), showMiniPlayer = false)
+                                if (!swap) LibraryScreen(Modifier.weight(0.58f), showMiniPlayer = false)
                             }
                         }
                     }
@@ -104,6 +109,13 @@ open class NowPlayingActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        DualScreen.running = when {
+            dual -> "BOTH"
+            DualScreen.secondaryDisplay(this) != null && display?.displayId == DualScreen.bottomDisplayId(this) -> "BOTTOM"
+            else -> "TOP"
+        }
+        if (!dual) ControllerBus.libraryRotation = display?.rotation ?: 0
+        com.dualamp.playback.ScreenAudioFocus.onScreenResumed(dual, display?.displayId ?: 0)
         if (!dual) return
         topResumed = true
         // Reopened from recents (or its own screen): bring the bottom screen back too.
@@ -112,6 +124,7 @@ open class NowPlayingActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
+        com.dualamp.playback.ScreenAudioFocus.onScreenPaused()
         if (dual) topResumed = false
     }
 
@@ -129,6 +142,12 @@ open class NowPlayingActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         AppEvents.userLeft()
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Single-screen: this screen also holds the library.
+        if (!dual) ControllerBus.libraryRotation = display?.rotation ?: 0
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean =

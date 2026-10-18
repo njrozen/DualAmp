@@ -51,6 +51,7 @@ class LibraryActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         bottomResumed = true
+        ControllerBus.libraryRotation = display?.rotation ?: 0
         // Reopened from recents (or its own screen): bring the top screen back too.
         DualScreen.reopenPartner(this, NowPlayingActivity::class.java, DualScreen.topDisplayId(this)) { topResumed }
     }
@@ -70,6 +71,11 @@ class LibraryActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         AppEvents.userLeft()
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        ControllerBus.libraryRotation = display?.rotation ?: 0
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean =

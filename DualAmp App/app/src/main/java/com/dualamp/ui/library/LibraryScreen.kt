@@ -13,6 +13,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -73,7 +76,6 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
-import androidx.compose.material.icons.rounded.ViewHeadline
 import androidx.compose.material.icons.rounded.ViewCarousel
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Edit
@@ -142,6 +144,8 @@ import com.dualamp.library.Song
 import com.dualamp.playback.PlayerConnection
 import com.dualamp.settings.Prefs
 import com.dualamp.ui.Accent
+import com.dualamp.ui.IconTint
+import com.dualamp.ui.TextMain
 import com.dualamp.ui.AlbumArt
 import com.dualamp.ui.Placeholder
 import com.dualamp.ui.holdKeyFocus
@@ -178,6 +182,13 @@ private class MenuState(val title: String, val options: List<MenuOption>) {
  */
 @Composable
 fun LibraryScreen(modifier: Modifier = Modifier, showMiniPlayer: Boolean = true) {
+    // Without its own player bar the library shares the screen with the player (single-screen mode).
+    singleScreenLayout = !showMiniPlayer
+    com.dualamp.ui.LibraryTheme { LibraryScreenBody(modifier, showMiniPlayer) }
+}
+
+@Composable
+private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val localLib by LibraryRepository.library.collectAsState()
@@ -387,7 +398,9 @@ fun LibraryScreen(modifier: Modifier = Modifier, showMiniPlayer: Boolean = true)
     // The DSP page shows the preset name, which depends on every band.
     val eqValues = Prefs.eqBands.map { it.state.collectAsState().value }
     val settingsKey = when (top.page) {
-        Page.Settings -> presetMode
+        Page.Settings -> listOf(presetMode, viewModes, Prefs.sameViewEverywhere.state.collectAsState().value,
+            com.dualamp.ui.AppTheme.presetName, com.dualamp.ui.AppTheme.glowName, Prefs.coverGlowShape.state.collectAsState().value,
+            Prefs.coverGlowAnim.state.collectAsState().value, Prefs.launchViewRoot.state.collectAsState().value, Prefs.launchViewPage.state.collectAsState().value)
         Page.Dsp -> eqValues
         else -> null
     }
@@ -398,10 +411,13 @@ fun LibraryScreen(modifier: Modifier = Modifier, showMiniPlayer: Boolean = true)
         lib?.let { buildPage(top.page, it, playlists, player, chosenSort, desc, actions) }
     }
     val fixedList = top.page == Page.Settings || top.page == Page.PcMusic || top.page == Page.MusicFolders || top.page == Page.Dsp || top.page == Page.Controls || vizPage || top.page == Page.Root(Category.QUEUE) || top.page is Page.Search
+    // One view for the library categories and one for the pages inside them (artist, album, playlist...),
+    // or the same for both (Settings > Library view). Grid unless changed.
+    val rootPage = top.page is Page.Root
     val view = if (fixedList) ViewMode.LIST
-    else Prefs.mapGet(Prefs.viewModes, typeKey)?.let { runCatching { ViewMode.valueOf(it) }.getOrNull() }
-        ?: data?.defaultView ?: ViewMode.LIST
+    else runCatching { ViewMode.valueOf(com.dualamp.settings.LibraryView.get(rootPage)) }.getOrDefault(ViewMode.GRID)
     @Suppress("UNUSED_EXPRESSION") viewModes
+    @Suppress("UNUSED_EXPRESSION") Prefs.sameViewEverywhere.state.collectAsState().value
 
     /** Opens [page] in the Library tab (switching to it), e.g. Go to album / artist. */
     fun goTo(page: Page) {
@@ -691,6 +707,11 @@ fun LibraryScreen(modifier: Modifier = Modifier, showMiniPlayer: Boolean = true)
             if (player.upNext.isNotEmpty()) menu = confirmClearQueue()
             return@handle
         }
+        // L3: the next view (grid, list, Cover Flow) on pages that have one.
+        if (nav == ControllerBus.Nav.CHANGE_VIEW) {
+            if (!fixedList) com.dualamp.settings.LibraryView.set(rootPage, ViewMode.entries[(view.ordinal + 1) % ViewMode.entries.size].name)
+            return@handle
+        }
         val m = menu
         if (m != null) {
             when (nav) {
@@ -763,7 +784,10 @@ fun LibraryScreen(modifier: Modifier = Modifier, showMiniPlayer: Boolean = true)
         if (entries.getOrNull(t.cursor)?.kind == Kind.HEADER) {
             t.cursor = (t.cursor until entries.size).firstOrNull { entries[it].kind != Kind.HEADER } ?: t.cursor
         }
-        val rows = navRows(entries, when (currentView) { ViewMode.GRID -> columns; ViewMode.COVERFLOW -> Int.MAX_VALUE; else -> 1 })
+        // Cover Flow: its buttons (Shuffle, All songs, Albums...) are one row and the covers another.
+        val rows = if (currentView == ViewMode.COVERFLOW) coverFlowRows(entries)
+            else navRows(entries, if (currentView == ViewMode.GRID) columns else 1)
+        val flow = currentView == ViewMode.COVERFLOW
         val (row, col) = locate(rows, t.cursor)
         fun cycleCategory(step: Int) {
             val cur = (t.page as? Page.Root)?.category ?: Category.ALBUMS
@@ -783,11 +807,13 @@ fun LibraryScreen(modifier: Modifier = Modifier, showMiniPlayer: Boolean = true)
             ControllerBus.Nav.DOWN -> if (row < rows.lastIndex) t.cursor = rows[row + 1].let { it[col.coerceAtMost(it.lastIndex)] }
             ControllerBus.Nav.LEFT -> when {
                 rows.isNotEmpty() && col > 0 -> t.cursor = rows[row][col - 1]
+                flow -> Unit // the first cover or button: stay (no tab switch)
                 atRoot -> cycleCategory(-1)
                 else -> back()
             }
             ControllerBus.Nav.RIGHT -> when {
                 rows.isNotEmpty() && col < rows[row].lastIndex -> t.cursor = rows[row][col + 1]
+                flow -> Unit
                 atRoot -> cycleCategory(1)
                 else -> entries.getOrNull(t.cursor)?.takeIf { it.target != null }?.let(::activate)
             }
@@ -801,22 +827,33 @@ fun LibraryScreen(modifier: Modifier = Modifier, showMiniPlayer: Boolean = true)
     // the current page data) rather than the one from the first composition.
     val latestHandleNav by rememberUpdatedState(handleNav)
     LaunchedEffect(Unit) { ControllerBus.nav.collect { latestHandleNav(it) } }
-    // Keep the gamepad cursor on screen.
-    // Keep the gamepad cursor on screen.
+    // Keep the gamepad cursor fully on screen (names included), all the way to the last row.
     val headerItems = if (data?.hero != null) 1 else 0
     LaunchedEffect(top, top.cursor, usingPad, view) {
         if (!usingPad || view == ViewMode.COVERFLOW) return@LaunchedEffect
         val index = top.cursor + headerItems
+        val margin = 12f
+        // The first row (Shuffle on an artist, Play on an album): show the top of the page, art and name included.
+        if (top.cursor == 0) {
+            if (view == ViewMode.GRID) top.grid.animateScrollToItem(0) else top.list.animateScrollToItem(0)
+            return@LaunchedEffect
+        }
         if (view == ViewMode.GRID) {
-            val visible = top.grid.layoutInfo.visibleItemsInfo
-            if (visible.isEmpty() || index <= visible.first().index || index >= visible.last().index) {
-                top.grid.animateScrollToItem((index - columns).coerceAtLeast(0))
-            }
+            val info = top.grid.layoutInfo
+            val item = info.visibleItemsInfo.firstOrNull { it.index == index }
+            if (item == null) { top.grid.animateScrollToItem(index); return@LaunchedEffect }
+            val below = item.offset.y + item.size.height - (info.viewportEndOffset - info.afterContentPadding)
+            val above = info.viewportStartOffset - item.offset.y
+            if (below > 0) top.grid.animateScrollBy(below + margin)
+            else if (above > 0) top.grid.animateScrollBy(-(above + margin))
         } else {
-            val visible = top.list.layoutInfo.visibleItemsInfo
-            if (visible.isEmpty() || index <= visible.first().index || index >= visible.last().index) {
-                top.list.animateScrollToItem((index - 1).coerceAtLeast(0))
-            }
+            val info = top.list.layoutInfo
+            val item = info.visibleItemsInfo.firstOrNull { it.index == index }
+            if (item == null) { top.list.animateScrollToItem((index - 1).coerceAtLeast(0)); return@LaunchedEffect }
+            val below = item.offset + item.size - (info.viewportEndOffset - info.afterContentPadding)
+            val above = info.viewportStartOffset - item.offset
+            if (below > 0) top.list.animateScrollBy(below + margin)
+            else if (above > 0) top.list.animateScrollBy(-(above + margin))
         }
     }
 
@@ -873,7 +910,7 @@ fun LibraryScreen(modifier: Modifier = Modifier, showMiniPlayer: Boolean = true)
                     },
                     onView = {
                         val next = ViewMode.entries[(view.ordinal + 1) % ViewMode.entries.size]
-                        Prefs.mapPut(Prefs.viewModes, typeKey, next.name)
+                        com.dualamp.settings.LibraryView.set(rootPage, next.name)
                     },
                 )
             }
@@ -890,7 +927,8 @@ fun LibraryScreen(modifier: Modifier = Modifier, showMiniPlayer: Boolean = true)
                     data == null -> Loading()
                     data.entries.isEmpty() && data.hero == null -> EmptyState(top.page)
                     else -> BoxWithConstraints(Modifier.fillMaxSize()) {
-                        val cols = (maxWidth / 116.dp).toInt().coerceIn(2, 6)
+                        // Squares per row: Settings > Grid size (3-6; its own value in single-screen mode).
+                        val cols = (if (singleScreenLayout) Prefs.gridColumnsSingle else Prefs.gridColumns).state.collectAsState().value.coerceIn(3, 6)
                         LaunchedEffect(cols) { columns = cols }
                         PageContent(
                             data = data,
@@ -973,6 +1011,12 @@ fun LibraryScreen(modifier: Modifier = Modifier, showMiniPlayer: Boolean = true)
 }
 
 /** Splits entries into the rows they occupy on screen, for up/down movement in grids. */
+/** Cover Flow's gamepad rows: the buttons above the covers, then the covers. */
+private fun coverFlowRows(entries: List<Entry>): List<List<Int>> {
+    val stops = entries.indices.filter { entries[it].kind != Kind.HEADER }
+    return listOf(stops.filter { entries[it].fullWidth }, stops.filterNot { entries[it].fullWidth }).filter { it.isNotEmpty() }
+}
+
 private fun navRows(entries: List<Entry>, columns: Int): List<List<Int>> {
     val rows = ArrayList<List<Int>>()
     var current = ArrayList<Int>()
@@ -1036,17 +1080,22 @@ private fun Header(
         if (page is Page.Search) {
             if (searchState != null) KeyboardTextDisplay(searchState, onTap = onOpenKeyboard, modifier = Modifier.weight(1f))
             // Closes the keyboard and leaves search (B does the same).
-            TextButton(onClick = onBack) { Text("Cancel", color = Color.White) }
+            TextButton(onClick = onBack) { Text("Cancel", color = TextMain) }
             return@Row
         } else {
-            if (compact) Spacer(Modifier.weight(1f)) else Text(
+            // A title too long for its space scrolls; on narrow screens the tabs and buttons scroll sideways.
+            Text(
                 title,
-                style = MaterialTheme.typography.titleLarge,
+                style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(start = 4.dp),
+                modifier = Modifier.weight(1f).padding(start = 4.dp).scrollIfLong(),
             )
+            val buttonsScroll = rememberScrollState()
+            Row(
+                Modifier.weight(if (compact) 2.4f else 1.6f, fill = false).horizontalScroll(buttonsScroll),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
             HeaderTabs(tab, onTab, compact, focus)
             // Slides in and out (the tabs move over to make room) when switching to or from Equalizer.
             androidx.compose.animation.AnimatedVisibility(
@@ -1058,11 +1107,14 @@ private fun Header(
             }
             // Highlighted while their tab is open; pressing again goes back.
             IconButton(onClick = onVisualizers, modifier = Modifier.highlight(focus == HeaderSpot.VISUALIZERS)) {
-                Icon(Icons.Rounded.AutoAwesome, "Visualizer folders", tint = if (tab == BottomTab.VISUALIZERS) Accent else Color.White)
+                Icon(Icons.Rounded.AutoAwesome, "Visualizer folders", tint = if (tab == BottomTab.VISUALIZERS) Accent else IconTint)
             }
             IconButton(onClick = onSettings, modifier = Modifier.highlight(focus == HeaderSpot.SETTINGS)) {
-                Icon(Icons.Rounded.Settings, "Settings", tint = if (tab == BottomTab.SETTINGS) Accent else Color.White)
+                Icon(Icons.Rounded.Settings, "Settings", tint = if (tab == BottomTab.SETTINGS) Accent else IconTint)
             }
+            }
+            // Keep the gamepad's header item in view.
+            LaunchedEffect(focus) { if (focus == HeaderSpot.SETTINGS || focus == HeaderSpot.VISUALIZERS) buttonsScroll.animateScrollTo(buttonsScroll.maxValue) else if (focus != null && focus.ordinal <= HeaderSpot.EQUALIZER.ordinal) buttonsScroll.animateScrollTo(0) }
         }
     }
 }
@@ -1081,13 +1133,13 @@ private fun CategoryChips(selected: Category, onSelect: (Category) -> Unit, focu
             val on = c == selected
             Text(
                 c.label,
-                color = if (on) Color.Black else Color.White,
+                color = if (on) Color.Black else TextMain,
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
                     .background(if (on) Accent else Surface3)
                     // Gamepad cursor on the chips: a ring round the selected one.
-                    .then(if (on && focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(50)) else Modifier)
+                    .then(if (on && focused) Modifier.border(2.dp, TextMain, RoundedCornerShape(50)) else Modifier)
                     .clickable { onSelect(c) }
                     .padding(horizontal = 14.dp, vertical = 7.dp),
             )
@@ -1121,7 +1173,7 @@ private fun SortRow(
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { onMenu(false) }) {
                     sorts.forEach { s ->
                         DropdownMenuItem(
-                            text = { Text(s.label, color = if (s == current) Accent else Color.White) },
+                            text = { Text(s.label, color = if (s == current) Accent else TextMain) },
                             trailingIcon = if (s == current) ({
                                 Icon(if (desc) Icons.Rounded.ArrowDownward else Icons.Rounded.ArrowUpward, null, tint = Accent)
                             }) else null,
@@ -1139,7 +1191,6 @@ private fun SortRow(
                         ViewMode.LIST -> Icons.AutoMirrored.Rounded.ViewList
                         ViewMode.GRID -> Icons.Rounded.GridView
                         ViewMode.COVERFLOW -> Icons.Rounded.ViewCarousel
-                        ViewMode.COMPACT -> Icons.Rounded.ViewHeadline
                     },
                     "Change view", Modifier.size(20.dp),
                 )
@@ -1192,12 +1243,15 @@ private fun PageContent(
             itemsIndexed(data.entries, key = { _, e -> e.key }) { i, e ->
                 val mod = Modifier.combinedClickable(onClick = { onClick(i, e) }, onLongClick = { onLongClick(i, e) })
                 val playing = e.song != null && e.song.id == nowPlaying
-                if (view == ViewMode.COMPACT && !e.fullWidth) CompactRow(e, i == highlight, playing, mod)
-                else EntryRow(e, i == highlight, playing, mod)
+                EntryRow(e, i == highlight, playing, mod)
             }
         }
     }
 }
+
+/** Text too long for its space scrolls sideways now and then, so all of it can be read. */
+internal fun Modifier.scrollIfLong(): Modifier =
+    basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 1500, repeatDelayMillis = 2500)
 
 internal fun Modifier.highlight(on: Boolean): Modifier =
     if (!on) this else this
@@ -1244,15 +1298,15 @@ private fun EntryRow(e: Entry, highlighted: Boolean, playing: Boolean, modifier:
                 EntryBadge(e)
                 Text(
                     e.title,
-                    color = if (playing) Accent else Color.White,
+                    color = if (playing) Accent else TextMain,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = if (e.kind == Kind.ACTION) FontWeight.SemiBold else FontWeight.Normal,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.scrollIfLong(),
                 )
             }
             if (e.subtitle.isNotEmpty()) {
-                Text(e.subtitle, color = TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(e.subtitle, color = TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1, modifier = Modifier.scrollIfLong())
             }
         }
         if (e.choices != null) {
@@ -1264,7 +1318,7 @@ private fun EntryRow(e: Entry, highlighted: Boolean, playing: Boolean, modifier:
                 DropdownMenu(expanded = openDropdown.value == e.key, onDismissRequest = { openDropdown.value = null }) {
                     e.choices.forEach { c ->
                         DropdownMenuItem(
-                            text = { Text(c, color = if (c == e.trailing) Accent else Color.White) },
+                            text = { Text(c, color = if (c == e.trailing) Accent else TextMain) },
                             trailingIcon = if (c == e.trailing) ({ Icon(Icons.Rounded.Check, null, tint = Accent) }) else null,
                             onClick = { e.onChoose?.invoke(c); openDropdown.value = null },
                         )
@@ -1303,12 +1357,12 @@ private fun SliderRow(e: Entry, spec: SliderSpec, highlighted: Boolean, modifier
             ArtBox(e.art, false, Modifier.size(36.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(e.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(e.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, modifier = Modifier.scrollIfLong())
                 if (e.subtitle.isNotEmpty()) {
-                    Text(e.subtitle, color = TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(e.subtitle, color = TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1, modifier = Modifier.scrollIfLong())
                 }
             }
-            Text("$value ${spec.unit}", color = Accent, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 8.dp))
+            Text(if (spec.minLabel != null && value <= spec.min) spec.minLabel else "$value ${spec.unit}", color = Accent, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 8.dp))
         }
         val steps = ((spec.max - spec.min) / spec.step - 1).coerceAtLeast(0)
         Slider(
@@ -1322,49 +1376,21 @@ private fun SliderRow(e: Entry, spec: SliderSpec, highlighted: Boolean, modifier
     }
 }
 
-/** iPod-style text row: one line, chevron for anything you can drill into. */
-@Composable
-private fun CompactRow(e: Entry, highlighted: Boolean, playing: Boolean, modifier: Modifier) {
-    Row(
-        modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp)
-            .highlight(highlighted)
-            .heightIn(min = 40.dp)
-            .padding(horizontal = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (playing) {
-            Icon(Icons.Rounded.Equalizer, null, tint = Accent, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(6.dp))
-        }
-        EntryBadge(e)
-        Text(e.title, color = if (playing) Accent else Color.White, style = MaterialTheme.typography.bodyLarge,
-            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        val side = if (e.kind == Kind.SONG) e.song?.artist
-            else e.trailing ?: e.subtitle.takeIf { e.kind == Kind.CONTAINER && it.isNotBlank() && it.length <= 24 }
-        side?.let {
-            Text(it, color = TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 140.dp).padding(start = 8.dp))
-        }
-        if (e.key in selectedKeys.value) SelectedMark(Modifier.padding(start = 8.dp))
-        if (e.kind == Kind.CONTAINER) Icon(Icons.Rounded.ChevronRight, null, tint = TextDim, modifier = Modifier.size(20.dp))
-    }
-}
-
 @Composable
 private fun EntryTile(e: Entry, highlighted: Boolean, modifier: Modifier) {
     Column(modifier.padding(4.dp).highlight(highlighted).padding(4.dp)) {
         Box {
-            ArtBox(e.art, e.round, Modifier.fillMaxWidth())
+            // Songs show their album art (the list view shows track numbers instead).
+            val art = if (e.song != null && e.art is Art.TrackNo) Art.Cover(e.song.albumId, e.song.id) else e.art
+            ArtBox(art, e.round, Modifier.fillMaxWidth())
             if (e.key in selectedKeys.value) SelectedMark(Modifier.align(Alignment.TopEnd).padding(6.dp))
         }
         Spacer(Modifier.height(6.dp))
         Text(e.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1,
-            overflow = TextOverflow.Ellipsis, textAlign = if (e.round) androidx.compose.ui.text.style.TextAlign.Center else null,
-            modifier = Modifier.fillMaxWidth())
-        Text(e.subtitle, color = TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            textAlign = if (e.round) androidx.compose.ui.text.style.TextAlign.Center else null, modifier = Modifier.fillMaxWidth())
+            textAlign = if (e.round) androidx.compose.ui.text.style.TextAlign.Center else null,
+            modifier = Modifier.fillMaxWidth().scrollIfLong())
+        Text(e.subtitle, color = TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1,
+            textAlign = if (e.round) androidx.compose.ui.text.style.TextAlign.Center else null, modifier = Modifier.fillMaxWidth().scrollIfLong())
     }
 }
 
@@ -1375,7 +1401,7 @@ private fun HeroHeader(h: Hero) {
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(h.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(h.subtitle, color = Color.White, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(h.subtitle, color = TextMain, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(h.detail, color = TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -1453,8 +1479,8 @@ private fun MiniPlayer(onOpenQueue: () -> Unit, onAddToPlaylist: (Song) -> Unit,
             }
             LinearProgressIndicator(
                 progress = { progress },
-                color = Color.White,
-                trackColor = Color.White.copy(alpha = 0.15f),
+                color = TextMain,
+                trackColor = TextMain.copy(alpha = 0.15f),
                 drawStopIndicator = {},
                 modifier = Modifier.fillMaxWidth().height(2.dp),
             )
@@ -1650,10 +1676,10 @@ private fun SelectionBar(
         Row(Modifier.padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onCancel) { Icon(Icons.Rounded.Close, "Clear selection") }
             Text("$count selected", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
-            TextButton(onClick = onPlay) { Text("Play", color = Color.White) }
-            TextButton(onClick = onNext) { Text("Next", color = Color.White) }
-            TextButton(onClick = onQueue) { Text("Queue", color = Color.White) }
-            TextButton(onClick = onPlaylist) { Text("Playlist", color = Color.White) }
+            TextButton(onClick = onPlay) { Text("Play", color = TextMain) }
+            TextButton(onClick = onNext) { Text("Next", color = TextMain) }
+            TextButton(onClick = onQueue) { Text("Queue", color = TextMain) }
+            TextButton(onClick = onPlaylist) { Text("Playlist", color = TextMain) }
         }
     }
 }
@@ -1683,7 +1709,7 @@ private fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, on
                     Spacer(Modifier.height(8.dp))
                     KeyboardTextDisplay(kb, onTap = {}, modifier = Modifier.fillMaxWidth(), placeholder = "")
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = onDismiss) { Text("Cancel (B)", color = Color.White) }
+                        TextButton(onClick = onDismiss) { Text("Cancel (B)", color = TextMain) }
                         TextButton(onClick = confirm) { Text("$confirmLabel (Start)") }
                     }
                 }
@@ -1693,3 +1719,6 @@ private fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, on
         }
     }
 }
+
+/** The library is half of a single-screen layout (Settings then show the single-screen grid size). */
+internal var singleScreenLayout = false

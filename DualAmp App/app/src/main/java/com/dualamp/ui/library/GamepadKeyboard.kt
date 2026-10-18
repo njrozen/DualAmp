@@ -25,6 +25,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.dualamp.input.ControllerBus
 import com.dualamp.ui.Accent
+import com.dualamp.ui.IconTint
+import com.dualamp.ui.TextMain
 import com.dualamp.ui.Surface1
 import com.dualamp.ui.Surface2
 import com.dualamp.ui.Surface3
@@ -149,7 +151,7 @@ internal fun KeyboardTextDisplay(state: KeyboardState, onTap: () -> Unit, modifi
             Text("|  $placeholder", color = TextDim, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
         } else {
             val shown = state.text.substring(0, state.cursor) + "|" + state.text.substring(state.cursor)
-            Text(shown, color = Color.White, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+            Text(shown, color = TextMain, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
         }
     }
 }
@@ -177,7 +179,7 @@ internal fun GamepadKeyboard(state: KeyboardState, highlight: Boolean, onDone: (
                             },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(key, color = Color.White, fontWeight = if (key.length > 1) FontWeight.SemiBold else FontWeight.Normal,
+                        Text(key, color = TextMain, fontWeight = if (key.length > 1) FontWeight.SemiBold else FontWeight.Normal,
                             style = MaterialTheme.typography.titleMedium)
                     }
                 }

@@ -85,6 +85,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -119,6 +120,7 @@ import com.dualamp.library.PlaylistStore
 import com.dualamp.library.Song
 import com.dualamp.playback.PlayerConnection
 import com.dualamp.settings.Prefs
+import com.dualamp.ui.library.scrollIfLong
 import com.dualamp.viz.MilkSurfaceView
 import com.dualamp.viz.VizControl
 import kotlinx.coroutines.delay
@@ -131,7 +133,8 @@ import kotlinx.coroutines.delay
 fun NowPlayingScreen(modifier: Modifier = Modifier) {
     val player by PlayerConnection.state.collectAsState()
     val library by LibraryRepository.library.collectAsState()
-    val timeoutSec by Prefs.overlayTimeoutSec.state.collectAsState()
+    // 3-30 s; 2 or less (the slider's "Never") keeps the song info up.
+    val timeoutSec = Prefs.overlayTimeoutSec.state.collectAsState().value
     val song = player.songId?.let { library?.songById?.get(it) }
 
     var overlayVisible by remember { mutableStateOf(true) }
@@ -147,7 +150,7 @@ fun NowPlayingScreen(modifier: Modifier = Modifier) {
     val canFade = vizOn && player.isPlaying && preset != null && vizMenuOpen.value == VizMenu.NONE
     LaunchedEffect(canFade) { if (!canFade) wake() }
     LaunchedEffect(lastTouch, overlayVisible, timeoutSec, canFade) {
-        if (overlayVisible && timeoutSec > 0 && canFade) {
+        if (overlayVisible && timeoutSec > 2 && canFade) {
             delay(timeoutSec * 1000L)
             overlayVisible = false
         }
@@ -200,8 +203,10 @@ private fun Visualizer(modifier: Modifier) {
         val v = view
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> v?.onResume()
-                Lifecycle.Event.ON_PAUSE -> v?.onPause()
+                // Start / stop rather than resume / pause: the visualizer keeps running when the screen is only
+                // partly covered for a moment (e.g. TopFocusActivity).
+                Lifecycle.Event.ON_START -> v?.onResume()
+                Lifecycle.Event.ON_STOP -> v?.onPause()
                 else -> Unit
             }
         }
@@ -232,7 +237,7 @@ private fun GestureLayer(onTap: () -> Unit) {
     )
 }
 
-/** Shows the preset name for a moment when it changes while the info is hidden. */
+/** Shows the preset name for a moment, top right (where it sits in the song info), when it changes while the info is hidden. */
 @Composable
 private fun PresetToast(overlayVisible: Boolean) {
     val preset by VizControl.currentPreset.collectAsState()
@@ -244,13 +249,15 @@ private fun PresetToast(overlayVisible: Boolean) {
         delay(2500)
         visible = false
     }
-    Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.BottomStart) {
+    Box(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp), contentAlignment = Alignment.TopEnd) {
         AnimatedVisibility(show && visible && !overlayVisible, enter = fadeIn(), exit = fadeOut(tween(800))) {
             Text(
                 preset?.name.orEmpty(),
                 color = Color.White.copy(alpha = 0.8f),
                 style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
+                maxLines = 1,
+                modifier = Modifier.widthIn(max = 480.dp).background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 4.dp).scrollIfLong(),
             )
         }
     }
@@ -282,13 +289,16 @@ private fun Overlay(
             )
         )
         val pad = if (maxHeight < 300.dp) 12.dp else 24.dp
+        // Short: the player half of the bottom screen held upright (single-screen). Small screens there: title and artist only.
+        val short = maxHeight < 300.dp
+        val smallScreen = maxHeight < 600.dp
         Column(Modifier.fillMaxSize().padding(horizontal = pad, vertical = pad * 0.75f)) {
             TopRow(queuePos)
             if (landscape) {
                 Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     ArtCard(song, Modifier.fillMaxHeight(0.92f))
                     Spacer(Modifier.width(pad * 1.2f))
-                    SongInfo(song, Modifier.weight(1f), large = maxHeight > 340.dp)
+                    SongInfo(song, Modifier.weight(1f), large = maxHeight > 340.dp, compact = short)
                 }
             } else if (maxHeight > maxWidth * 1.3f) {
                 // Tall screen (Thor turned upright): big cover on top, song info underneath.
@@ -297,22 +307,24 @@ private fun Overlay(
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    ArtCard(song, Modifier.size(minOf(maxWidth - pad * 2, maxHeight * 0.45f)))
+                    // Small screens: the cover leaves room for the title and artist below it.
+                    ArtCard(song, Modifier.size(if (smallScreen) minOf(maxWidth - pad * 2, maxHeight * 0.45f, maxHeight - 280.dp).coerceAtLeast(48.dp) else minOf(maxWidth - pad * 2, maxHeight * 0.45f)))
                     Spacer(Modifier.height(pad))
-                    SongInfo(song, Modifier.fillMaxWidth(), large = maxWidth > 400.dp)
+                    SongInfo(song, Modifier.fillMaxWidth(), large = maxWidth > 400.dp && !smallScreen, compact = smallScreen)
                 }
             } else {
                 Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         ArtCard(song, Modifier.size(minOf(maxWidth * 0.36f, maxHeight * 0.4f)))
                         Spacer(Modifier.width(16.dp))
-                        SongInfo(song, Modifier.weight(1f), large = false)
+                        SongInfo(song, Modifier.weight(1f), large = false, compact = smallScreen)
                     }
                 }
             }
             SeekBar(song, durationMs)
-            // Narrow screens get two rows so every button fits.
-            Controls(song, isPlaying, shuffle, repeatMode, compact = maxWidth < 420.dp, twoRows = maxWidth < 620.dp)
+            // Narrow screens get two rows so every button fits; short ones one row of small buttons.
+            Controls(song, isPlaying, shuffle, repeatMode, compact = maxWidth < 420.dp || short,
+                twoRows = maxWidth < 620.dp && !short, narrow = maxWidth < 340.dp || short)
         }
     }
 }
@@ -320,13 +332,13 @@ private fun Overlay(
 @Composable
 private fun TopRow(queuePos: Pair<Int, Int>?) {
     val preset by VizControl.currentPreset.collectAsState()
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
         if (queuePos != null) {
-            Text("${queuePos.first} of ${queuePos.second}", color = TextDim, style = MaterialTheme.typography.labelMedium)
+            Text("${queuePos.first} of ${queuePos.second}", color = TopDim, style = MaterialTheme.typography.labelMedium, maxLines = 1)
         }
-        Spacer(Modifier.weight(1f))
-        // Tapping the preset name opens "add to visualizer folder".
-        Box {
+        Spacer(Modifier.width(12.dp))
+        // Tapping the preset name opens "add to visualizer folder". A long name scrolls.
+        Box(Modifier.weight(1f, fill = false)) {
             Row(
                 Modifier
                     .clip(RoundedCornerShape(50))
@@ -341,8 +353,7 @@ private fun TopRow(queuePos: Pair<Int, Int>?) {
                     color = Color.White.copy(alpha = 0.75f),
                     style = MaterialTheme.typography.labelMedium,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 420.dp),
+                    modifier = Modifier.widthIn(max = 420.dp).scrollIfLong(),
                 )
             }
             AddPresetMenu(menuPreset.value)
@@ -362,7 +373,7 @@ private fun AddPresetMenu(preset: com.dualamp.viz.PresetManager.Preset?) {
     val folders by VizFolders.folders.collectAsState()
     val context = LocalContext.current
     DropdownMenu(expanded = vizMenuOpen.value == VizMenu.ADD_PRESET && preset != null, onDismissRequest = { vizMenuOpen.value = VizMenu.NONE }) {
-        Text("Add to visualizer folder", color = TextDim, style = MaterialTheme.typography.labelMedium,
+        Text("Add to visualizer folder", color = TopDim, style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
         folders.forEach { f ->
             val inside = preset != null && preset.path in f.presetPaths
@@ -397,22 +408,22 @@ private fun AddPresetMenu(preset: com.dualamp.viz.PresetManager.Preset?) {
                 }) { Text("Create") }
             },
             dismissButton = { TextButton(onClick = { vizMenuOpen.value = VizMenu.NONE }) { Text("Cancel") } },
-            containerColor = Surface2,
+            containerColor = TopSurface2,
         )
     }
 }
 
 /** Picks which visualizer folder the top screen cycles through. */
 @Composable
-private fun ChooseFolderButton() {
+private fun ChooseFolderButton(modifier: Modifier = Modifier) {
     val folders by VizFolders.folders.collectAsState()
     val active by Prefs.activeVizFolder.state.collectAsState()
     Box {
-        IconButton(onClick = { vizMenuOpen.value = VizMenu.CHOOSE_FOLDER }) {
+        IconButton(onClick = { vizMenuOpen.value = VizMenu.CHOOSE_FOLDER }, modifier = modifier) {
             Icon(Icons.Rounded.Folder, "Visualizer folder", tint = if (active.isNotEmpty()) AccentViz else Color.White.copy(alpha = 0.8f))
         }
         DropdownMenu(expanded = vizMenuOpen.value == VizMenu.CHOOSE_FOLDER, onDismissRequest = { vizMenuOpen.value = VizMenu.NONE }) {
-            Text("Cycle through", color = TextDim, style = MaterialTheme.typography.labelMedium,
+            Text("Cycle through", color = TopDim, style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
             DropdownMenuItem(
                 text = { Text("All presets") },
@@ -442,7 +453,7 @@ private fun ChooseFolderButton() {
                 )
             }
             if (folders.isEmpty()) {
-                Text("Tap the preset name (top right) to start a folder", color = TextDim, style = MaterialTheme.typography.bodySmall,
+                Text("Tap the preset name (top right) to start a folder", color = TopDim, style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
             }
         }
@@ -455,7 +466,7 @@ private fun ChooseFolderButton() {
             modifier = Modifier.heightIn(max = 520.dp),
         ) {
             DropdownMenuItem(
-                text = { Text("Back", color = TextDim) },
+                text = { Text("Back", color = TopDim) },
                 leadingIcon = { Icon(Icons.Rounded.NavigateBefore, null) },
                 onClick = { vizMenuOpen.value = VizMenu.CHOOSE_FOLDER },
             )
@@ -484,7 +495,7 @@ private fun ArtCard(song: Song?, modifier: Modifier) {
         Surface(
             Modifier.fillMaxSize().shadow(18.dp, shape).clip(shape)
                 .combinedClickable(onClick = {}, onLongClick = { if (song != null) vizMenuOpen.value = VizMenu.SONG }),
-            shape = shape, color = Surface2,
+            shape = shape, color = TopSurface2,
         ) {
             if (song != null) AlbumArt(song.albumId, song.id, shape = shape)
             else Placeholder("none", Modifier.fillMaxSize())
@@ -501,7 +512,7 @@ private fun SongMenu(song: Song) {
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
     fun close() { vizMenuOpen.value = VizMenu.NONE }
     DropdownMenu(expanded = vizMenuOpen.value == VizMenu.SONG, onDismissRequest = ::close) {
-        Text(song.title, color = TextDim, style = MaterialTheme.typography.labelMedium, maxLines = 1,
+        Text(song.title, color = TopDim, style = MaterialTheme.typography.labelMedium, maxLines = 1,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp).widthIn(max = 320.dp))
         DropdownMenuItem(text = { Text("Play next") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.QueueMusic, null) },
             onClick = { PlayerConnection.playNext(listOf(song)); toast("Playing next"); close() })
@@ -530,7 +541,7 @@ private fun SongMenu(song: Song) {
                 }) { Text("Create") }
             },
             dismissButton = { TextButton(onClick = ::close) { Text("Cancel") } },
-            containerColor = Surface2,
+            containerColor = TopSurface2,
         )
     }
 }
@@ -543,7 +554,7 @@ private fun PlaylistMenu(song: Song, which: VizMenu) {
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
     fun close() { vizMenuOpen.value = VizMenu.NONE }
     DropdownMenu(expanded = vizMenuOpen.value == which, onDismissRequest = ::close) {
-        Text("Add to playlist", color = TextDim, style = MaterialTheme.typography.labelMedium,
+        Text("Add to playlist", color = TopDim, style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
         DropdownMenuItem(text = { Text("New playlist…") }, leadingIcon = { Icon(Icons.Rounded.Add, null) },
             onClick = { vizMenuOpen.value = VizMenu.SONG_NEW_PLAYLIST })
@@ -556,29 +567,32 @@ private fun PlaylistMenu(song: Song, which: VizMenu) {
 }
 
 @Composable
-private fun SongInfo(song: Song?, modifier: Modifier, large: Boolean) {
+/** [compact]: small screens (single-screen on the bottom): just the title and artist, each on one line that scrolls if long. */
+private fun SongInfo(song: Song?, modifier: Modifier, large: Boolean, compact: Boolean = false) {
     Column(modifier) {
         Text(
             song?.title ?: "Nothing playing",
             color = Color.White,
             fontWeight = FontWeight.Bold,
-            fontSize = if (large) 34.sp else 22.sp,
+            fontSize = if (large) 34.sp else if (compact) 20.sp else 22.sp,
             lineHeight = if (large) 38.sp else 26.sp,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
+            maxLines = if (compact) 1 else 2,
+            overflow = if (compact) TextOverflow.Clip else TextOverflow.Ellipsis,
+            modifier = if (compact) Modifier.scrollIfLong() else Modifier,
         )
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(if (compact) 2.dp else 6.dp))
         Text(
             song?.artist ?: "Pick something from your library",
             color = Color.White.copy(alpha = 0.85f),
             fontSize = if (large) 22.sp else 16.sp,
+            lineHeight = if (large) 28.sp else 22.sp,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.scrollIfLong(),
         )
-        if (song != null) {
+        if (song != null && !compact) {
             Spacer(Modifier.height(4.dp))
             val albumLine = listOfNotNull(song.album, song.year.takeIf { it > 0 }?.toString()).joinToString(" · ")
-            Text(albumLine, color = TextDim, fontSize = if (large) 18.sp else 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(albumLine, color = TopDim, fontSize = if (large) 18.sp else 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (song.genre.isNotBlank()) Chip(song.genre)
@@ -623,7 +637,7 @@ private fun SeekBar(song: Song?, durationMs: Long) {
     }
     val fraction = dragging ?: if (durationMs > 0) (position.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(formatTime(dragging?.let { (it * durationMs).toLong() } ?: position), color = TextDim, fontSize = 13.sp, modifier = Modifier.width(52.dp))
+        Text(formatTime(dragging?.let { (it * durationMs).toLong() } ?: position), color = TopDim, fontSize = 13.sp, modifier = Modifier.width(52.dp))
         WaveformBar(
             song = song,
             fraction = fraction,
@@ -634,35 +648,39 @@ private fun SeekBar(song: Song?, durationMs: Long) {
             },
             modifier = Modifier.weight(1f).height(44.dp),
         )
-        Text(formatTime(durationMs), color = TextDim, fontSize = 13.sp, modifier = Modifier.width(52.dp).padding(start = 8.dp))
+        Text(formatTime(durationMs), color = TopDim, fontSize = 13.sp, modifier = Modifier.width(52.dp).padding(start = 8.dp))
     }
 }
 
 @Composable
-private fun Controls(song: Song?, isPlaying: Boolean, shuffle: Boolean, repeatMode: Int, compact: Boolean, twoRows: Boolean = false) {
+private fun Controls(song: Song?, isPlaying: Boolean, shuffle: Boolean, repeatMode: Int, compact: Boolean, twoRows: Boolean = false, narrow: Boolean = false) {
     val playlists by PlaylistStore.playlists.collectAsState()
     val liked = song != null && playlists.firstOrNull { it.id == PlaylistStore.LIKED_ID }?.songIds?.contains(song.id) == true
     val locked = Prefs.presetMode.state.collectAsState().value == VizControl.Mode.LOCKED.name
     val iconSize: Dp = if (compact) 26.dp else 32.dp
+    // Narrow: the seven buttons of the second row are smaller so all of them fit.
+    val small = if (narrow) Modifier.size(34.dp) else Modifier
+    // Narrow on one row (short screen): the playback buttons too.
+    val smallTransport = if (narrow && !twoRows) small else Modifier
 
     val likeButton: @Composable () -> Unit = {
-        IconButton(onClick = { song?.let { PlaylistStore.toggleLike(it.id) } }) {
+        IconButton(onClick = { song?.let { PlaylistStore.toggleLike(it.id) } }, modifier = small) {
             Icon(if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, "Like",
                 tint = if (liked) Accent else Color.White, modifier = Modifier.size(iconSize * 0.85f))
         }
         // Add to playlist, with its list opening at the button.
         Box {
-            IconButton(onClick = { if (song != null) vizMenuOpen.value = VizMenu.BAR_PLAYLIST }) {
+            IconButton(onClick = { if (song != null) vizMenuOpen.value = VizMenu.BAR_PLAYLIST }, modifier = small) {
                 Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to playlist", tint = Color.White, modifier = Modifier.size(iconSize * 0.9f))
             }
             if (song != null) PlaylistMenu(song, VizMenu.BAR_PLAYLIST)
         }
     }
     val transport: @Composable () -> Unit = {
-        IconButton(onClick = PlayerConnection::toggleShuffle) {
+        IconButton(onClick = PlayerConnection::toggleShuffle, modifier = smallTransport) {
             Icon(Icons.Rounded.Shuffle, "Shuffle", tint = if (shuffle) Accent else Color.White, modifier = Modifier.size(iconSize * 0.85f))
         }
-        IconButton(onClick = PlayerConnection::previous) {
+        IconButton(onClick = PlayerConnection::previous, modifier = smallTransport) {
             Icon(Icons.Rounded.SkipPrevious, "Previous", tint = Color.White, modifier = Modifier.size(iconSize * 1.2f))
         }
         FilledIconButton(
@@ -673,10 +691,10 @@ private fun Controls(song: Song?, isPlaying: Boolean, shuffle: Boolean, repeatMo
         ) {
             Icon(if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, "Play/pause", modifier = Modifier.size(iconSize * 1.2f))
         }
-        IconButton(onClick = PlayerConnection::next) {
+        IconButton(onClick = PlayerConnection::next, modifier = smallTransport) {
             Icon(Icons.Rounded.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(iconSize * 1.2f))
         }
-        IconButton(onClick = PlayerConnection::cycleRepeat) {
+        IconButton(onClick = PlayerConnection::cycleRepeat, modifier = smallTransport) {
             Icon(
                 if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat, "Repeat",
                 tint = if (repeatMode == Player.REPEAT_MODE_OFF) Color.White else Accent,
@@ -686,21 +704,21 @@ private fun Controls(song: Song?, isPlaying: Boolean, shuffle: Boolean, repeatMo
     }
     val vizButtons: @Composable (Boolean) -> Unit = { showPrevious ->
         if (showPrevious) {
-            IconButton(onClick = VizControl::previousPreset) {
+            IconButton(onClick = VizControl::previousPreset, modifier = small) {
                 Icon(Icons.Rounded.NavigateBefore, "Previous preset", tint = Color.White.copy(alpha = 0.8f))
             }
         }
         val vizOn = Prefs.vizEnabled.state.collectAsState().value
-        IconButton(onClick = { Prefs.vizEnabled.value = !vizOn }) {
+        IconButton(onClick = { Prefs.vizEnabled.value = !vizOn }, modifier = small) {
             Icon(if (vizOn) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff, "Visualizer on/off",
                 tint = if (vizOn) Color.White.copy(alpha = 0.8f) else AccentViz)
         }
-        ChooseFolderButton()
-        IconButton(onClick = { VizControl.setLocked(!locked) }) {
+        ChooseFolderButton(small)
+        IconButton(onClick = { VizControl.setLocked(!locked) }, modifier = small) {
             Icon(if (locked) Icons.Rounded.Lock else Icons.Rounded.LockOpen, "Lock preset",
                 tint = if (locked) AccentViz else Color.White.copy(alpha = 0.8f))
         }
-        IconButton(onClick = VizControl::nextPreset) {
+        IconButton(onClick = VizControl::nextPreset, modifier = small) {
             Icon(Icons.Rounded.NavigateNext, "Next preset", tint = Color.White.copy(alpha = 0.8f))
         }
     }
@@ -709,9 +727,24 @@ private fun Controls(song: Song?, isPlaying: Boolean, shuffle: Boolean, repeatMo
         // Portrait: playback controls centred on their own row, everything else below.
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(verticalAlignment = Alignment.CenterVertically) { transport() }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            // Narrow (e.g. half of the bottom screen in single-screen mode): smaller buttons so all of them fit.
+            CompositionLocalProvider(androidx.compose.material3.LocalMinimumInteractiveComponentSize provides if (narrow) 36.dp else 48.dp) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = if (narrow) Arrangement.SpaceBetween else Arrangement.Start) {
+                    likeButton()
+                    if (!narrow) Spacer(Modifier.weight(1f))
+                    vizButtons(true)
+                }
+            }
+        }
+        return
+    }
+    if (narrow) {
+        // Short screen: every button on one row, small.
+        CompositionLocalProvider(androidx.compose.material3.LocalMinimumInteractiveComponentSize provides 34.dp) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 likeButton()
-                Spacer(Modifier.weight(1f))
+                transport()
                 vizButtons(true)
             }
         }
@@ -787,3 +820,10 @@ private fun WaveformBar(
         drawLine(Accent, Offset(playedX, 0f), Offset(playedX, size.height), strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
     }
 }
+
+// The top screen keeps DualAmp's original colors in every theme (it sits on the visualizer); only its
+// accent (like, shuffle, repeat) follows Settings > Theme.
+private val TopDim = Color(0xFFB3B3B3)
+private val TopSurface1 = Color(0xFF121212)
+private val TopSurface2 = Color(0xFF1E1E1E)
+private val TopSurface3 = Color(0xFF2A2A2A)

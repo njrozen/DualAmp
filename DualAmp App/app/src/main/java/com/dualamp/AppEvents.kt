@@ -71,6 +71,8 @@ object AppEvents {
 
     /** Closing either screen (Back, or swiping it away in recents) closes the other one too. */
     fun closeAll() {
+        // Quitting the app stops the music too (a planned close, like a relaunch, does not).
+        if (SystemClock.uptimeMillis() - plannedCloseAt > 3000) com.dualamp.playback.PlayerConnection.stopForQuit()
         _finishAll.tryEmit(Unit)
     }
 
@@ -93,7 +95,8 @@ object AppEvents {
         plannedCloseAt = SystemClock.uptimeMillis()
         _finishAll.tryEmit(Unit)
         Handler(Looper.getMainLooper()).postDelayed({
-            app.startActivity(Intent(app, LauncherActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            app.startActivity(Intent(app, LauncherActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(LauncherActivity.EXTRA_FROM_SETTINGS, true))
         }, 600)
     }
 }
