@@ -17,13 +17,16 @@ on one screen (stacked in portrait, side by side in landscape).
 
 ## Installing
 
-1. Copy `DualAmp 1.0.apk` to the Thor (or any Android 11+ device) and open it (allow installing from your file manager when asked), or from a PC:
-   `adb install "DualAmp 1.0.apk"`.
+Download from the [latest release](https://github.com/njrozen/DualAmp/releases/latest): **DualAmp-1.0.apk** (the app) and,
+optionally, **DualAmp-Server.exe** (for playing your PC's music).
+
+1. Copy `DualAmp-1.0.apk` to the Thor (or any Android 11+ device) and open it (allow installing from your file manager when asked), or from a PC:
+   `adb install DualAmp-1.0.apk`.
 2. Start DualAmp. It asks for your music folder, offers the shoulder-button permission, then shows the help guide
    (Settings > Help opens it again).
 3. Optional, for the lid-closed buttons: Settings > Lid-closed buttons, and turn on DualAmp under
    Accessibility (Settings > Shoulder buttons while asleep).
-4. Optional, to play the music on your Windows PC over Wi-Fi: run `DualAmp Server.exe` on the PC and choose your music in its window (see
+4. Optional, to play the music on your Windows PC over Wi-Fi: run `DualAmp-Server.exe` on the PC and choose your music in its window (see
    [Playing music from your PC](#playing-music-from-your-pc)).
 
 ## Building
@@ -165,10 +168,10 @@ copies decoded audio out of the player. DualAmp follows the same design with ope
 
 ## Playing music from your PC
 
-**DualAmp Server.exe** (next to this README) shares the music on a Windows 10 or 11 PC with DualAmp over Wi-Fi.
+**DualAmp-Server.exe** (from the [releases page](https://github.com/njrozen/DualAmp/releases/latest)) shares the music on a Windows 10 or 11 PC with DualAmp over Wi-Fi.
 It is a single small program (about 65 KB) that uses what Windows already has (.NET Framework 4.8): nothing to install.
 
-**First launch.** Double-click **DualAmp Server.exe**. Its window opens and asks for your music:
+**First launch.** Double-click **DualAmp-Server.exe**. Its window opens and asks for your music:
 
 - **Use foobar2000's library** appears when foobar2000 is installed and DualAmp Server can open its music folders.
   It shares exactly what foobar2000 has in its media library.
