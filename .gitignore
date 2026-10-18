@@ -1,0 +1,10 @@
+DualAmp App/local.properties
+DualAmp App/.gradle/
+DualAmp App/.kotlin/
+DualAmp App/build/
+DualAmp App/app/build/
+DualAmp App/app/.cxx/
+DualAmp App/app/src/main/assets/presets/
+# Release downloads go on the GitHub Releases page, not in the repository.
+*.apk
+DualAmp Server.exe

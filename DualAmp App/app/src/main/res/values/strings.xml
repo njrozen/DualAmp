@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DualAmp</string>
+    <string name="sleep_keys_description">Lets the shoulder buttons control music while the Thor is asleep or the lid is closed: L1 previous track, R1 next track, R2 play/pause. It does nothing while the screen is on, so games and other apps are not affected.</string>
+</resources>

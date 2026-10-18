@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Two stacked screens with a waveform on the top one. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FF2A2342"
+        android:pathData="M30,28h48a4,4 0,0 1,4 4v18a4,4 0,0 1,-4 4h-48a4,4 0,0 1,-4 -4v-18a4,4 0,0 1,4 -4z" />
+    <path
+        android:fillColor="#FF2A2342"
+        android:pathData="M38,58h32a4,4 0,0 1,4 4v14a4,4 0,0 1,-4 4h-32a4,4 0,0 1,-4 -4v-14a4,4 0,0 1,4 -4z" />
+    <path
+        android:strokeColor="#FFB388FF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M32,41 L40,41 L44,33 L50,49 L56,36 L61,45 L65,41 L76,41" />
+    <path
+        android:fillColor="#FF1DB954"
+        android:pathData="M41,64h26v3h-26z M41,70h18v3h-18z" />
+</vector>
