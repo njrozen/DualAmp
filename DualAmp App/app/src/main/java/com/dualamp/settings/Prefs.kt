@@ -127,6 +127,18 @@ object Prefs {
     val sameViewEverywhere = Setting("same_view_everywhere", true)
     val sortModes = Setting("lib_sort_modes", "")
 
+    /** Stream the visualizer to browsers on the same Wi-Fi ([com.dualamp.viz.VizStream]). */
+    val vizStream = Setting("viz_stream", false)
+
+    // Lyrics on the player (the lyrics button, or double-click the right stick, R3).
+    val lyricsOn = Setting("lyrics_on", false)
+    /** Darkness of the box behind the lyrics over the visualizer, 0-100 %. */
+    val lyricsBackdrop = Setting("lyrics_backdrop", 55)
+    /** Timed lyrics: positive shows each line sooner, negative later (ms). */
+    val lyricsOffsetMs = Setting("lyrics_offset_ms", 0)
+    /** Look up lyrics on lrclib.net for songs without a .lrc file or lyrics in their tags. */
+    val lyricsOnline = Setting("lyrics_online", true)
+
     // Last queue, restored on the next launch.
     val queueIds = Setting("queue_ids", "")
     val queueIndex = Setting("queue_index", 0)
@@ -137,6 +149,7 @@ object Prefs {
         dspEnabled, dspPreamp, dspBass, dspTreble, dspBalance, dspWidth, dspMono, dspLimiter,
         screens, swapScreens, overlayTimeoutSec, presetMode, presetDurationSec, vizReactivity, activeVizFolder, shufflePresets, l2Random, hardCuts,
         vizQuality, vizFpsCap, showPresetName, libraryCategory, viewModes, themeBackground, themeText, themeSubText, themeAccent, themeIcon, coverGlowColor, coverGlowShape, coverGlowAnim, launchViewRoot, launchViewPage, coverGlowOpacity, gridColumns, gridColumnsSingle, singleSwap, sameViewEverywhere, sortModes,
+        lyricsOn, lyricsBackdrop, lyricsOffsetMs, lyricsOnline, vizStream,
         queueIds, queueIndex, queuePositionMs,
     ) + eqBands
 

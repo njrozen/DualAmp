@@ -109,6 +109,7 @@ open class NowPlayingActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        com.dualamp.input.SleepKeysService.onAppForeground()
         DualScreen.running = when {
             dual -> "BOTH"
             DualScreen.secondaryDisplay(this) != null && display?.displayId == DualScreen.bottomDisplayId(this) -> "BOTTOM"

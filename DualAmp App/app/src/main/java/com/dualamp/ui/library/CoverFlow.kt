@@ -182,15 +182,24 @@ internal fun CoverFlow(
                 else if (glowAnim == "None") appear.snapTo(1f)
                 else appear.animateTo(1f, androidx.compose.animation.core.tween(350, easing = androidx.compose.animation.core.FastOutSlowInEasing))
             }
+            // Each move along the covers: the glow swells a little and bounces back.
+            val pulse = remember { androidx.compose.animation.core.Animatable(0f) }
+            LaunchedEffect(cursor) {
+                if (!latestPad) return@LaunchedEffect
+                pulse.animateTo(1f, androidx.compose.animation.core.tween(90, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+                pulse.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 0.3f, stiffness = 260f))
+            }
             if (onCovers && glowAlpha > 0f) {
                 val dropPx = with(density) { (maxHeight / 2 + coverDp).toPx() }
                 CoverGlow(
                     glowShape, listOf(glowColor.copy(alpha = glowAlpha), glowColor.copy(alpha = glowAlpha * (0.35f + 0.5f * glowExtra)), Color.Transparent),
                     Modifier.align(Alignment.Center).requiredSize(coverDp * (1.8f + 0.5f * glowExtra), coverDp * (2.15f + 0.5f * glowExtra)).graphicsLayer {
                         val p = appear.value
+                        val bounce = 1f + 0.12f * pulse.value
                         when (glowAnim) {
-                            "Expand" -> { scaleX = 0.05f + 0.95f * p; scaleY = scaleX; alpha = p.coerceIn(0f, 1f) }
-                            "Drop" -> { translationY = -dropPx * (1f - p); alpha = p.coerceIn(0f, 1f) }
+                            "Expand" -> { scaleX = (0.05f + 0.95f * p) * bounce; scaleY = scaleX; alpha = p.coerceIn(0f, 1f) }
+                            "Drop" -> { translationY = -dropPx * (1f - p); alpha = p.coerceIn(0f, 1f); scaleX = bounce; scaleY = bounce }
+                            else -> { scaleX = bounce; scaleY = bounce }
                         }
                     },
                 )

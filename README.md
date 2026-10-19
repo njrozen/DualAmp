@@ -10,7 +10,7 @@ A music player made with the **AYN Thor** and its two screens in mind. It works 
   Genres, Years, Folders, Queue), a sort menu, and three views: **List, Grid and Cover Flow**. Drill-down works like an
   iPod: Artist → their albums and singles → tracks. Long names scroll so you can read all of them.
 
-**Version 1.1** · made by njrozen and Claude.
+**Version 1.2** · made by njrozen and Claude.
 
 | Both screens: now playing on top, the library below (here in Cover Flow) |
 |:---:|
@@ -23,6 +23,10 @@ A music player made with the **AYN Thor** and its two screens in mind. It works 
 | Single-screen on the top screen (landscape) | Single-screen on the bottom screen (portrait) |
 |:---:|:---:|
 | ![Single-screen mode on the top screen, landscape](screenshots/single-screen-top-landscape.png) | ![Single-screen mode on the bottom screen, portrait](screenshots/single-screen-bottom-portrait.png) |
+
+| Lyrics over the visualizer (top screen) |
+|:---:|
+| ![Timed lyrics over the visualizer on the top screen](screenshots/lyrics-top-screen.png) |
 
 ## Screens, landscape and portrait
 
@@ -38,6 +42,18 @@ A music player made with the **AYN Thor** and its two screens in mind. It works 
 - **Settings > Screen orientation:** Auto (follows how you hold the device), Landscape or Portrait (either way up).
   Both screens always turn together. In portrait the D-pad turns with the screen, so up on the D-pad is always up on
   screen.
+
+## What's new in 1.2
+
+- **Lyrics:** timed lyrics over the visualizer and in the song info, from `.lrc` files next to your songs, the songs' tags, or
+  lrclib.net. The lyrics button (top left of the player) or a double-click of the right stick turns them on and off; Settings > Lyrics
+  sets the background darkness and the timing (sooner / later). Songs without lyrics just show the visualizer.
+- **Stream the visualizer** to a TV, PC or phone browser on the same Wi-Fi (Settings > Stream visualizer).
+- **Hold Y** to like the song playing or add it to a playlist, from anywhere.
+- **Lid closed:** the buttons work with the music paused too, the visualizer stops to save battery, the volume buttons keep
+  controlling DualAmp, and it works alongside SleepManager's closed-lid protection.
+- **Cover Flow:** the glow pulses as you move through the covers.
+- **Fixes:** waveforms load for every song; the artist page's buttons fit narrow screens.
 
 ## What's new in 1.1
 
@@ -57,11 +73,11 @@ A music player made with the **AYN Thor** and its two screens in mind. It works 
 
 ## Installing
 
-Download from the [latest release](https://github.com/njrozen/DualAmp/releases/latest): **DualAmp-1.1.apk** (the app) and,
+Download from the [latest release](https://github.com/njrozen/DualAmp/releases/latest): **DualAmp-1.2.apk** (the app) and,
 optionally, **DualAmp-Server.exe** (for playing your PC's music).
 
-1. Copy `DualAmp-1.1.apk` to the Thor (or any Android 11+ device) and open it (allow installing from your file manager when asked), or from a PC:
-   `adb install DualAmp-1.1.apk`. It installs over 1.0 and keeps your settings and playlists.
+1. Copy `DualAmp-1.2.apk` to the Thor (or any Android 11+ device) and open it (allow installing from your file manager when asked), or from a PC:
+   `adb install DualAmp-1.2.apk`. It installs over 1.0 and 1.1 and keeps your settings and playlists.
 2. Start DualAmp. It asks for your music folder, offers the shoulder-button permission, then shows the help guide
    (Settings > Help opens it again).
 3. Optional, for the lid-closed buttons: Settings > Lid-closed buttons, and turn on DualAmp under
@@ -95,7 +111,7 @@ All of these can be installed from Android Studio's SDK Manager.
 | D-pad | Move the library cursor (left/right switch categories at the top level, left goes back elsewhere). Up from the top row reaches the categories (Playlists, Artists, Albums, Singles, Songs, Genres, Years, Folders, Queue; left / right switch) and then the header: PC, Library, Equalizer, search, visualizers, settings (A picks, down goes back) |
 | A | Open / play |
 | B | Back |
-| Y (or long-press) | Item menu: play next, add to queue, add to playlist, like, go to album/artist |
+| Y (or long-press) | Item menu: play next, add to queue, add to playlist, like, go to album/artist. Hold Y: like the song playing or add it to a playlist |
 | X / R2 | Play / pause (R2 also works asleep, see below). Hold R2: fast forward |
 | Start | Settings (press again to close); hold for the visualizer folders |
 | L1 / R1 | Previous / next track (also asleep) |
@@ -103,7 +119,7 @@ All of these can be installed from Android Studio's SDK Manager.
 | Playlist button (next to Like, top screen) | Add the playing song to a playlist |
 | Select | Next tab (PC, Library, Equalizer); hold to search with the keyboard open |
 | L3 | Next library view (grid, list, Cover Flow); hold to clear the queue (asks first) |
-| R3 | Show or hide the song info |
+| R3 | Show or hide the song info; double-click: lyrics on / off |
 
 The controller works whichever screen you touched last.
 
@@ -270,6 +286,25 @@ Run `server/build.cmd`: it compiles `DualAmp Server.exe` with the C# compiler th
 
 ## Other options
 
-- Lid-closed shoulder buttons (Settings > Lid-closed buttons): when the lid closes during playback, DualAmp keeps the screen on
+- Lid-closed shoulder buttons (Settings > Lid-closed buttons): when the lid closes with music queued (playing or paused), DualAmp keeps the screen on
   (black, dimmest) so L1 / R1 / R2 keep working (hold R2 / L2 to fast forward / rewind); opening the lid (detected with the Thor's lid sensor) brings the screen back,
-  and so does a tap. After 2 minutes paused with the lid shut, the screen is allowed to sleep. Uses more battery while on.
+  and so does a tap. The visualizer stops while the lid is shut (unless it is being streamed). After 10 minutes paused with the lid shut, the screen is allowed to sleep.
+  The volume buttons keep controlling DualAmp: on the bottom screen's volume, DualAmp plays at the top screen's volume set to the same level while the lid is
+  shut (Android lets only the Thor itself change the bottom screen's volume) and goes back when it opens.
+  **SleepManager:** works with its "AYN Thor closed-lid protection" on. That protection turns the screen off with the lid shut unless a dock or TV
+  is connected, and the Thor's controller (volume buttons too) stops with the screen off. So while the lid is shut with music, DualAmp adds a
+  tiny display named "DualAmp virtual external (lid buttons)" that SleepManager counts as a dock (nothing is shown on it); it goes away when
+  the lid opens. SleepManager's JamesDSP option turns JamesDSP off with the lid shut, which makes the music quieter; turn it off to avoid that.
+
+## Lyrics
+
+The lyrics button at the top left of the player (or double-click the right stick, R3) shows lyrics over the visualizer, on a dark box (Settings > Lyrics background),
+and the line being sung in the song info. Timed lyrics follow the song; Settings > Lyrics timing moves them sooner or later. DualAmp looks for
+a `.lrc` file next to the song (same name), then lyrics in the song's tags, then lrclib.net (Settings > Find lyrics online; sends the title and artist).
+Songs without lyrics just show the visualizer.
+
+## Streaming the visualizer
+
+Settings > Stream visualizer shares the visualizer with any browser on the same Wi-Fi, like casting: open the address it shows (for example
+`http://192.168.1.20:8340`) on a TV, PC or phone. Double-click for full screen; the song's title shows for a few seconds when it changes. The music
+keeps playing on the device. The stream runs while DualAmp's visualizer is on screen (about 10-20 Mbit/s, 30 frames a second).

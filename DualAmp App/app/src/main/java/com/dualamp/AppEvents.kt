@@ -41,7 +41,13 @@ object AppEvents {
     private val _lidBlackout = kotlinx.coroutines.flow.MutableStateFlow(false)
     /** Lid closed during playback: both screens stay on but black and as dim as possible. */
     val lidBlackout: kotlinx.coroutines.flow.StateFlow<Boolean> get() = _lidBlackout
-    fun setLidBlackout(on: Boolean) { _lidBlackout.value = on }
+    fun setLidBlackout(on: Boolean) { _lidBlackout.value = on; lidChangedAt = SystemClock.uptimeMillis() }
+    /** The lid is shut (with or without the screen kept on): closing screens then is not the user quitting. */
+    @Volatile var lidShut = false
+        set(v) { field = v; lidChangedAt = SystemClock.uptimeMillis() }
+
+    /** When the lid last closed or opened (screens can be torn down and rebuilt then; that is not quitting). */
+    @Volatile private var lidChangedAt = 0L
 
     /** Shows a black cover at lowest brightness on [activity] while [lidBlackout] is on. */
     fun followBlackout(activity: androidx.activity.ComponentActivity) {
@@ -72,7 +78,8 @@ object AppEvents {
     /** Closing either screen (Back, or swiping it away in recents) closes the other one too. */
     fun closeAll() {
         // Quitting the app stops the music too (a planned close, like a relaunch, does not).
-        if (SystemClock.uptimeMillis() - plannedCloseAt > 3000) com.dualamp.playback.PlayerConnection.stopForQuit()
+        val now = SystemClock.uptimeMillis()
+        if (now - plannedCloseAt > 3000 && !_lidBlackout.value && !lidShut && now - lidChangedAt > 10_000) com.dualamp.playback.PlayerConnection.stopForQuit()
         _finishAll.tryEmit(Unit)
     }
 

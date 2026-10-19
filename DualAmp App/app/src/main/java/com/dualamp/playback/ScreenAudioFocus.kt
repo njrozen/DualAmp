@@ -110,12 +110,81 @@ object ScreenAudioFocus {
         shown = if (dual) "dual" else "single:$displayId"
         shownResumed = true
         Log.i(TAG, "Screen resumed ($shown, held=${current != null}, recorded=$recordedMode, pending=$pending)")
-        if (current == null) return
+        if (current == null || lidTopVolume) return
         // Moved between modes or screens since the record (or it was put off): record again for the screen now in use.
         if (pending || recordedMode != shown) main.postDelayed({ if (current != null) acquire(pointAtScreen = true) }, 600)
     }
 
     fun onScreenPaused() { shownResumed = false }
+
+    /** DualAmp plays at the bottom screen's volume now (the Thor lists those apps in sys.audio.uids). */
+    fun usesBottomVolume(): Boolean {
+        val uids = runCatching {
+            Class.forName("android.os.SystemProperties").getMethod("get", String::class.java).invoke(null, "sys.audio.uids") as String
+        }.getOrNull() ?: return false
+        val me = android.os.Process.myUid().toString()
+        return uids.split(',').any { it.trim() == me }
+    }
+
+    // --- Lid closed --------------------------------------------------------------------------------------------
+    // Closing the lid turns the screens off and DualAmp turns one back on (black) for the buttons, which moves
+    // Android's focus, and the Thor then re-assigns DualAmp's volume to whichever screen got it. So the record is
+    // made again for the screen DualAmp uses, after the lid closes and after it opens.
+    //
+    // Only the Thor itself can change the bottom screen's volume (Android refuses other apps). So with the lid shut
+    // and DualAmp on the bottom screen's volume, it plays at the top screen's volume set to the same loudness for
+    // as long as the lid is shut, so the volume buttons control it; opening the lid goes back to the bottom volume.
+
+    private var lidTopVolume = false
+    private var savedMainVolume = -1
+    private const val SECONDARY_LEVEL = "secondary_screen_volume_level"
+    private const val SECONDARY_MAX = 15
+
+    /** [screenOff]: the screen stays off with the lid shut (SleepManager): only the bottom-volume switch needs doing then. */
+    fun onLidClosed(screenOff: Boolean = false) {
+        main.postDelayed({
+            if (current == null) return@postDelayed
+            if (usesBottomVolume()) {
+                val level = android.provider.Settings.System.getInt(app.contentResolver, SECONDARY_LEVEL, -1)
+                if (level >= 0) {
+                    savedMainVolume = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+                    val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                    audio.setStreamVolume(AudioManager.STREAM_MUSIC, Math.round(level.toFloat() * max / SECONDARY_MAX), 0)
+                }
+                lidTopVolume = true
+                Log.i(TAG, "Lid closed: top screen's volume at the bottom's level ($level / $SECONDARY_MAX)")
+                // Screen off: the helper turns it on for a moment to get the focus.
+                recordFor(DualScreen.topDisplayId(app), single = false, wake = screenOff)
+            } else if (!screenOff) {
+                recordFor(shownDisplay(), single = shownMode() != "dual")
+            }
+        }, 900)
+    }
+
+    /** [onlyIfChanged]: only undo the top-screen volume from [onLidClosed], if it was used. */
+    fun onLidOpened(onlyIfChanged: Boolean = false) {
+        if (onlyIfChanged && !lidTopVolume) return
+        main.postDelayed({
+            if (lidTopVolume) {
+                lidTopVolume = false
+                if (savedMainVolume >= 0) audio.setStreamVolume(AudioManager.STREAM_MUSIC, savedMainVolume, 0)
+                savedMainVolume = -1
+            }
+            if (current != null) recordFor(shownDisplay(), single = shownMode() != "dual")
+        }, 900)
+    }
+
+    private fun shownDisplay(): Int {
+        val mode = shownMode()
+        return if (mode == "dual") DualScreen.topDisplayId(app) else mode.removePrefix("single:").toIntOrNull() ?: 0
+    }
+
+    /** Re-records audio focus from [displayId] now, even with the screens dark (the lid helper shows over the lock screen). */
+    private fun recordFor(displayId: Int, single: Boolean, wake: Boolean = false) {
+        pending = false
+        // The helper asks for audio focus again once it has the focus ([recordFromHelper]).
+        TopFocusActivity.open(app, displayId, single, wake)
+    }
 
     /** Called by [TopFocusActivity] while it has focus. */
     internal fun recordFromHelper() {

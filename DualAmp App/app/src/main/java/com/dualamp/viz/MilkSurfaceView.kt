@@ -44,6 +44,9 @@ private class MilkRenderer : GLSurfaceView.Renderer {
     private val shaper = AudioShaper()
     private val silence = FloatArray(SILENT_FRAMES * 2)
     private var lastFrameAt = 0L
+    private val capture = GlCapture()
+    private var surfaceW = 0
+    private var surfaceH = 0
 
     // Settings last pushed to projectM.
     private var appliedDuration = -1
@@ -60,10 +63,13 @@ private class MilkRenderer : GLSurfaceView.Renderer {
         appliedDuration = -1
         appliedHardCuts = null
         appliedLock = null
+        capture.reset()
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         GLES30.glViewport(0, 0, width, height)
+        surfaceW = width
+        surfaceH = height
         if (handle == 0L) {
             handle = MilkNative.create(width, height, PresetManager.textureDirs.toTypedArray(), 48, 32)
             if (handle == 0L) Log.e(tag, "projectM failed to start")
@@ -96,6 +102,8 @@ private class MilkRenderer : GLSurfaceView.Renderer {
         }
 
         MilkNative.render(handle)
+        // Settings > Stream visualizer: a copy for browsers on the Wi-Fi.
+        capture.afterFrame(surfaceW, surfaceH)
 
         val events = MilkNative.pollEvents(handle)
         if (events and MilkNative.EVENT_FAILED != 0) {

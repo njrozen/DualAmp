@@ -11,6 +11,7 @@ import com.dualamp.viz.VizFolders
 class DualAmpApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        instance = this
         Prefs.init(this)
         com.dualamp.ui.AppTheme.load()
         com.dualamp.settings.applyLaunchViews()
@@ -19,5 +20,13 @@ class DualAmpApp : Application() {
         VizFolders.init(this)
         LibraryRepository.init(this)
         PlayerConnection.connect(this)
+        com.dualamp.viz.VizStream.appContext = this
+        com.dualamp.viz.VizStream.apply()
+    }
+
+    companion object {
+        /** For code without a Context of its own (settings text, for example). */
+        lateinit var instance: DualAmpApp
+            private set
     }
 }

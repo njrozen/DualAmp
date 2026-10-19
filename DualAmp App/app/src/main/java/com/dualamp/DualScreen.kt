@@ -76,10 +76,10 @@ object DualScreen {
         launchOn(context, LibraryActivity::class.java, bottomDisplayId(context))
     }
 
-    fun launchOn(context: Context, cls: Class<*>, displayId: Int) {
+    fun launchOn(context: Context, cls: Class<*>, displayId: Int, extras: (Intent) -> Unit = {}) {
         AppEvents.markOwnLaunch()
         val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId)
-        val intent = Intent(context, cls).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val intent = Intent(context, cls).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).also(extras)
         try {
             context.startActivity(intent, options.toBundle())
         } catch (e: SecurityException) {

@@ -637,6 +637,21 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean) {
             return@handle
         }
         // Hold Start: the visualizer folders. Hold Select: search, with the keyboard open.
+        // Hold Y: like the song playing or add it to a playlist, from anywhere.
+        if (nav == ControllerBus.Nav.NOW_PLAYING_MENU) {
+            val s = PlayerConnection.state.value.songId?.let { id -> localLib?.songById?.get(id) ?: pcLib?.songById?.get(id) }
+            if (s == null) { toast("Nothing playing"); return@handle }
+            if (helpOpen) closeHelp()
+            val liked = PlaylistStore.isLiked(s.id)
+            menu = MenuState("Now playing: ${s.title}", listOf(
+                MenuOption(if (liked) "Remove from Liked Songs" else "Add to Liked Songs",
+                    if (liked) Icons.Rounded.FavoriteBorder else Icons.Rounded.Favorite) {
+                    PlaylistStore.toggleLike(s.id); toast(if (liked) "Removed from Liked Songs" else "Added to Liked Songs")
+                },
+                MenuOption("Add to playlist…", Icons.AutoMirrored.Rounded.PlaylistAdd) { menu = playlistChooser(listOf(s)) },
+            ))
+            return@handle
+        }
         if (nav == ControllerBus.Nav.OPEN_VISUALIZERS) {
             if (helpOpen) closeHelp()
             menu = null
@@ -1362,7 +1377,7 @@ private fun SliderRow(e: Entry, spec: SliderSpec, highlighted: Boolean, modifier
                     Text(e.subtitle, color = TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1, modifier = Modifier.scrollIfLong())
                 }
             }
-            Text(if (spec.minLabel != null && value <= spec.min) spec.minLabel else "$value ${spec.unit}", color = Accent, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 8.dp))
+            Text(if (spec.minLabel != null && value <= spec.min) spec.minLabel else spec.label?.invoke(value) ?: "$value ${spec.unit}", color = Accent, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 8.dp))
         }
         val steps = ((spec.max - spec.min) / spec.step - 1).coerceAtLeast(0)
         Slider(

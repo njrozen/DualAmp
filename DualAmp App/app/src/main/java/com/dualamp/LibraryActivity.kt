@@ -50,6 +50,7 @@ class LibraryActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        com.dualamp.input.SleepKeysService.onAppForeground()
         bottomResumed = true
         ControllerBus.libraryRotation = display?.rotation ?: 0
         // Reopened from recents (or its own screen): bring the top screen back too.

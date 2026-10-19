@@ -45,6 +45,7 @@ import com.dualamp.ui.plural
 import com.dualamp.viz.PresetManager
 import com.dualamp.viz.VizControl
 import com.dualamp.viz.VizFolders
+import com.dualamp.viz.VizStream
 
 enum class Category(val label: String) {
     PLAYLISTS("Playlists"), ARTISTS("Artists"), ALBUMS("Albums"), SINGLES("Singles"), SONGS("Songs"),
@@ -151,7 +152,9 @@ data class Entry(
 }
 
 /** A setting shown as a slider. With [minLabel], the leftmost position reads as that word (e.g. "Never") instead of a number. */
-class SliderSpec(val setting: com.dualamp.settings.Prefs.Setting<Int>, val min: Int, val max: Int, val step: Int, val unit: String, val minLabel: String? = null)
+/** [label]: how the value reads (default "<value> <unit>"). */
+class SliderSpec(val setting: com.dualamp.settings.Prefs.Setting<Int>, val min: Int, val max: Int, val step: Int, val unit: String, val minLabel: String? = null,
+    val label: ((Int) -> String)? = null)
 
 data class Hero(val title: String, val subtitle: String, val detail: String, val art: Art, val round: Boolean = false)
 
@@ -791,6 +794,21 @@ private fun buildSettings(actions: UiActions): PageData {
                 slider = SliderSpec(p.infoBackdrop, 0, 100, 5, "%")),
             setting("presetname", "Show preset name", onOff(p.showPresetName.value)) { p.showPresetName.value = !p.showPresetName.value },
 
+            header("Lyrics"),
+            setting("lyrics", "Lyrics", onOff(p.lyricsOn.value), "On the player, over the visualizer (also the lyrics button on the player, or double-click the right stick, R3)") { p.lyricsOn.value = !p.lyricsOn.value },
+            Entry("set:lyricsbg", "Lyrics background", "Darkens the visualizer behind the lyrics so they are easy to read",
+                Art.Symbol(Icons.Rounded.Settings, "lyricsbg"), Kind.SETTING,
+                slider = SliderSpec(p.lyricsBackdrop, 0, 100, 5, "%")),
+            Entry("set:lyricsoffset", "Lyrics timing", "For timed lyrics: show each line sooner (right) or later (left)",
+                Art.Symbol(Icons.Rounded.Settings, "lyricsoffset"), Kind.SETTING,
+                slider = SliderSpec(p.lyricsOffsetMs, -3000, 3000, 100, "ms") { v ->
+                    when { v == 0 -> "On time"; v > 0 -> "%.1f s sooner".format(v / 1000f); else -> "%.1f s later".format(-v / 1000f) }
+                }),
+            setting("lyricsonline", "Find lyrics online", onOff(p.lyricsOnline.value),
+                "For songs without a .lrc file or lyrics in their tags: asks lrclib.net (sends the title and artist)") {
+                p.lyricsOnline.value = !p.lyricsOnline.value; com.dualamp.library.LyricsRepository.retryMissing()
+            },
+
             header("Visualizer"),
             setting("vizon", "Visualizer", onOff(p.vizEnabled.value), "Off shows the album art instead (also the eye button on the top screen)") { p.vizEnabled.value = !p.vizEnabled.value },
             Entry("set:presets", "Visualizers", "$presetCount presets · your visualizer folders", Art.Symbol(Icons.Rounded.AutoAwesome, "presets"),
@@ -803,6 +821,12 @@ private fun buildSettings(actions: UiActions): PageData {
                 slider = SliderSpec(p.presetDurationSec, 20, 120, 5, "s")),
             setting("shuffle", "Shuffle presets", onOff(p.shufflePresets.value), "Automatic changes pick at random; the arrows always go in order") { p.shufflePresets.value = !p.shufflePresets.value },
             setting("l2", "L2 button", if (p.l2Random.value) "Random visualizer" else "Next visualizer", "Within the visualizer folder or type you are using") { p.l2Random.value = !p.l2Random.value },
+            setting("vizstream", "Stream visualizer",
+                if (!p.vizStream.value) "Off" else if (VizStream.viewers.value > 0) "${VizStream.viewers.value} watching" else "On",
+                if (!p.vizStream.value) "Watch the visualizer on a TV, PC or phone on the same Wi-Fi, in its web browser"
+                else "Open " + (VizStream.address() ?: "this device's address, port ${VizStream.PORT}") + " in a browser on the same Wi-Fi (double-click: full screen)") {
+                p.vizStream.value = !p.vizStream.value; VizStream.apply()
+            },
             setting("hardcut", "Switch presets on big beats", onOff(p.hardCuts.value)) { p.hardCuts.value = !p.hardCuts.value },
             Entry("set:reactivity", "Visualizer reactivity", "How strongly it reacts to the music. Higher: bigger jumps on beats; lower: calmer",
                 Art.Symbol(Icons.Rounded.Settings, "reactivity"), Kind.SETTING,
@@ -821,7 +845,8 @@ private fun buildSettings(actions: UiActions): PageData {
             Entry("set:controls", "Controls", "What every button and gesture does", Art.Symbol(Icons.Rounded.SportsEsports, "controls"), Kind.CONTAINER, target = Page.Controls),
             setting("controlsAtLaunch", "Show help at launch", onOff(p.showControlsAtLaunch.value), "The help guide when DualAmp starts") { p.showControlsAtLaunch.value = !p.showControlsAtLaunch.value },
             setting("sleepkeys", "Shoulder buttons while asleep", if (actions.sleepKeysEnabled()) "On" else "Off", "L1/R1 skip, R2 play/pause with the screen off. Opens Accessibility settings") { actions.openAccessibility() },
-            setting("lidbuttons", "Lid-closed buttons", onOff(p.lidButtons.value), "Lid shut while playing: screen stays on (black, dimmest) so L1/R1/R2 work. Uses more battery") { p.lidButtons.value = !p.lidButtons.value },
+            setting("lidbuttons", "Lid-closed buttons", onOff(p.lidButtons.value),
+                "Lid shut with music: screen stays on (black, dimmest) so L1 / R1, R2 and holding L2 / R2 work. Uses a little more battery") { p.lidButtons.value = !p.lidButtons.value },
 
             header("About"),
             Entry("set:about", "DualAmp ${com.dualamp.BuildConfig.VERSION_NAME}", "Version, device and credits", Art.Symbol(Icons.Rounded.Info, "about"), Kind.SETTING, action = actions.showAbout),

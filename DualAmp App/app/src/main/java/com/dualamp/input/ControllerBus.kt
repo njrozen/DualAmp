@@ -16,17 +16,17 @@ import kotlinx.coroutines.flow.SharedFlow
  * instead of relying on Compose focus, so the controls work no matter which screen has focus.
  *
  *  D-pad      move the library cursor          A / Enter   open / play
- *  B          back                             Y           item menu
+ *  B          back                             Y           item menu (hold: like / add to playlist, song playing)
  *  X          play / pause                     Select      next tab (hold: search keyboard)
  *  Start      Settings (hold: visualizer folders)
  *  L1 / R1    previous / next track            R2          play / pause
  *  L2         next visualizer preset (hold: rewind)    R2 hold: fast forward
- *  L3         change the library view (hold: clear the queue, asks first)        R3   show / hide the song info
+ *  L3         change the library view (hold: clear the queue, asks first)        R3   show / hide the song info (double-click: lyrics on / off)
  */
 object ControllerBus {
 
     enum class Nav {
-        UP, DOWN, LEFT, RIGHT, SELECT, BACK, MENU, NEXT_CATEGORY, CLEAR_QUEUE, CHANGE_VIEW, OPEN_SETTINGS,
+        UP, DOWN, LEFT, RIGHT, SELECT, BACK, MENU, NOW_PLAYING_MENU, NEXT_CATEGORY, CLEAR_QUEUE, CHANGE_VIEW, OPEN_SETTINGS,
         OPEN_SEARCH, OPEN_VISUALIZERS, KB_DELETE, KB_SPACE, KB_SYMBOLS, KB_CURSOR_LEFT, KB_CURSOR_RIGHT,
     }
 
@@ -39,7 +39,8 @@ object ControllerBus {
     /** Returns true when the event was consumed. Call from Activity.dispatchKeyEvent. */
     fun handleKey(event: KeyEvent): Boolean {
         if (event.keyCode == KeyEvent.KEYCODE_BUTTON_SELECT || event.keyCode == KeyEvent.KEYCODE_BUTTON_START ||
-            event.keyCode == KeyEvent.KEYCODE_BUTTON_THUMBL) {
+            event.keyCode == KeyEvent.KEYCODE_BUTTON_THUMBL || event.keyCode == KeyEvent.KEYCODE_BUTTON_THUMBR ||
+            (event.keyCode == KeyEvent.KEYCODE_BUTTON_Y && !textInput)) {
             handleHoldable(event)
             return true
         }
@@ -62,15 +63,13 @@ object ControllerBus {
             KeyEvent.KEYCODE_BUTTON_X -> PlayerConnection.togglePlay()
             KeyEvent.KEYCODE_BUTTON_L1 -> PlayerConnection.previous()
             KeyEvent.KEYCODE_BUTTON_R1 -> PlayerConnection.next()
-            // Toggle only: the "show the info on any button" rule below would undo the hide.
-            KeyEvent.KEYCODE_BUTTON_THUMBR -> { VizControl.toggleOverlay(); return true }
             else -> return false
         }
         VizControl.pokeOverlay()
         return true
     }
 
-    // Select, Start and L3: a short press acts when released; holding for half a second does something else.
+    // Select, Start, L3, R3 and Y: a short press acts when released; holding for half a second does something else.
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
     private var pendingHold: Runnable? = null
     private var holdFired = false
@@ -78,24 +77,49 @@ object ControllerBus {
     private fun handleHoldable(event: KeyEvent) {
         val select = event.keyCode == KeyEvent.KEYCODE_BUTTON_SELECT
         val l3 = event.keyCode == KeyEvent.KEYCODE_BUTTON_THUMBL
+        // R3: show / hide the song info (toggle only: the "show the info on any button" rule would undo the hide);
+        // double-click: lyrics on / off.
+        val r3 = event.keyCode == KeyEvent.KEYCODE_BUTTON_THUMBR
+        // Y: the item menu; hold: like / add to playlist for the song playing.
+        val y = event.keyCode == KeyEvent.KEYCODE_BUTTON_Y
         when (event.action) {
             KeyEvent.ACTION_DOWN -> if (event.repeatCount == 0) {
                 pendingHold?.let(main::removeCallbacks)
                 holdFired = false
                 pendingHold = Runnable {
                     holdFired = true
-                    navFlow.tryEmit(if (l3) Nav.CLEAR_QUEUE else if (select) Nav.OPEN_SEARCH else Nav.OPEN_VISUALIZERS)
+                    if (r3) holdFired = false // R3 has no hold: it counts as a click
+                    else navFlow.tryEmit(if (y) Nav.NOW_PLAYING_MENU else if (l3) Nav.CLEAR_QUEUE else if (select) Nav.OPEN_SEARCH else Nav.OPEN_VISUALIZERS)
                 }.also { main.postDelayed(it, HOLD_MS) }
             }
             KeyEvent.ACTION_UP -> {
                 pendingHold?.let(main::removeCallbacks)
                 pendingHold = null
-                if (!holdFired) navFlow.tryEmit(if (l3) Nav.CHANGE_VIEW else if (select) Nav.NEXT_CATEGORY else Nav.OPEN_SETTINGS)
+                if (r3) rightStickClick()
+                else if (!holdFired) navFlow.tryEmit(if (y) Nav.MENU else if (l3) Nav.CHANGE_VIEW else if (select) Nav.NEXT_CATEGORY else Nav.OPEN_SETTINGS)
             }
         }
     }
 
+    // R3: one click waits a moment for a second one; two clicks close together turn the lyrics on / off.
+    private var r3Single: Runnable? = null
+    private var lastR3At = 0L
+
+    private fun rightStickClick() {
+        val now = android.os.SystemClock.uptimeMillis()
+        r3Single?.let(main::removeCallbacks)
+        r3Single = null
+        if (now - lastR3At < DOUBLE_CLICK_MS) {
+            lastR3At = 0L
+            com.dualamp.settings.Prefs.lyricsOn.value = !com.dualamp.settings.Prefs.lyricsOn.value
+            return
+        }
+        lastR3At = now
+        r3Single = Runnable { r3Single = null; VizControl.toggleOverlay() }.also { main.postDelayed(it, DOUBLE_CLICK_MS) }
+    }
+
     private const val HOLD_MS = 500L
+    private const val DOUBLE_CLICK_MS = 350L
 
     private var rightTriggerDown = false
     private var lastTriggerToggle = 0L
@@ -143,7 +167,8 @@ object ControllerBus {
         if (!triggerPressed[i]) return
         triggerPressed[i] = false
         triggerHold[i]?.let(main::removeCallbacks)
-        if (triggerSeeking[i]) return
+        if (triggerSeeking[i]) { android.util.Log.d("ControllerBus", "${if (right) "R2" else "L2"} hold: seeked to ${PlayerConnection.positionMs / 1000}s"); return }
+        android.util.Log.d("ControllerBus", "${if (right) "R2" else "L2"} tap")
         if (right) { triggerPlayPause(); VizControl.pokeOverlay() } else VizControl.leftTrigger()
     }
 

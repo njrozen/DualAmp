@@ -15,6 +15,10 @@ open class TopFocusActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         overridePendingTransition(0, 0)
+        // Also with the lid shut (the screens dark, maybe locked).
+        setShowWhenLocked(true)
+        // Lid shut with the screen kept off: on for the moment it takes.
+        if (intent.getBooleanExtra(EXTRA_WAKE, false)) setTurnScreenOn(true)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -34,8 +38,12 @@ open class TopFocusActivity : Activity() {
 
     companion object {
         /** On [displayId]; [single]: in single-screen mode (its own task family, so the right screen's task is used). */
-        fun open(context: Context, displayId: Int, single: Boolean) {
-            DualScreen.launchOn(context, if (single) SingleFocusActivity::class.java else TopFocusActivity::class.java, displayId)
+        private const val EXTRA_WAKE = "wake"
+
+        fun open(context: Context, displayId: Int, single: Boolean, wake: Boolean = false) {
+            DualScreen.launchOn(context, if (single) SingleFocusActivity::class.java else TopFocusActivity::class.java, displayId) {
+                it.putExtra(EXTRA_WAKE, wake)
+            }
         }
     }
 }

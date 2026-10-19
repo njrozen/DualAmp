@@ -119,6 +119,11 @@ import com.dualamp.library.LibraryRepository
 import com.dualamp.library.PlaylistStore
 import com.dualamp.library.Song
 import com.dualamp.playback.PlayerConnection
+import com.dualamp.library.Lyrics
+import com.dualamp.library.LyricsRepository
+import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.animation.togetherWith
 import com.dualamp.settings.Prefs
 import com.dualamp.ui.library.scrollIfLong
 import com.dualamp.viz.MilkSurfaceView
@@ -181,13 +186,33 @@ fun NowPlayingScreen(modifier: Modifier = Modifier) {
         GestureLayer(onTap = { if (overlayVisible) overlayVisible = false else wake() })
         PresetToast(overlayVisible)
 
+        // Lyrics (the lyrics button, or double-click the right stick, R3): over the visualizer, and in the song info while it shows.
+        val lyricsOn by Prefs.lyricsOn.state.collectAsState()
+        val context = LocalContext.current
+        val lyricsState by produceState<LyricsState>(LyricsState.Off, song?.id, lyricsOn) {
+            value = if (!lyricsOn || song == null) LyricsState.Off else {
+                value = LyricsState.Loading
+                LyricsRepository.load(context, song)?.let { LyricsState.Found(it) } ?: LyricsState.None
+            }
+        }
+        val lyrics = (lyricsState as? LyricsState.Found)?.lyrics
+        val lyricsOffset by Prefs.lyricsOffsetMs.state.collectAsState()
+        var lyricsPos by remember { mutableLongStateOf(0L) }
+        LaunchedEffect(lyrics) {
+            while (lyrics != null) { lyricsPos = PlayerConnection.positionMs; delay(100) }
+        }
+        val lyricIndex = lyrics?.indexAt(lyricsPos + lyricsOffset, player.durationMs) ?: -1
+        LyricsOverVisualizer(lyricsState, lyricIndex, visible = lyricsOn && !overlayVisible)
+
         AnimatedVisibility(
             visible = overlayVisible,
             enter = fadeIn(tween(250)),
             exit = fadeOut(tween(900)),
         ) {
             Overlay(song, player.isPlaying, player.durationMs, player.shuffle, player.repeatMode,
-                queuePos = if (player.queue.isEmpty()) null else player.queueIndex + 1 to player.queue.size)
+                queuePos = if (player.queue.isEmpty()) null else player.queueIndex + 1 to player.queue.size,
+                lyricsState = lyricsState,
+                lyric = lyrics?.takeIf { lyricIndex >= 0 }?.let { l -> lyricLine(l, lyricIndex) to lyricText(l, lyricIndex + 1) })
         }
     }
 }
@@ -199,14 +224,24 @@ private fun Visualizer(modifier: Modifier) {
     var view by remember { mutableStateOf<MilkSurfaceView?>(null) }
     AndroidView(factory = { MilkSurfaceView(it).also { v -> view = v } }, modifier = modifier)
     LaunchedEffect(quality) { view?.applyQuality() }
+    // Lid closed: the visualizer stops (battery), unless a browser is watching it (Settings > Stream visualizer).
+    val lidShut by com.dualamp.AppEvents.lidBlackout.collectAsState()
+    val streamViewers by com.dualamp.viz.VizStream.viewers.collectAsState()
+    val stopForLid = lidShut && streamViewers == 0
+    var started by remember { mutableStateOf(false) }
+    LaunchedEffect(stopForLid, started, view) {
+        val v = view ?: return@LaunchedEffect
+        if (!started) return@LaunchedEffect
+        if (stopForLid) v.onPause() else v.onResume()
+    }
     DisposableEffect(lifecycle, view) {
         val v = view
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 // Start / stop rather than resume / pause: the visualizer keeps running when the screen is only
                 // partly covered for a moment (e.g. TopFocusActivity).
-                Lifecycle.Event.ON_START -> v?.onResume()
-                Lifecycle.Event.ON_STOP -> v?.onPause()
+                Lifecycle.Event.ON_START -> { started = true; if (!(com.dualamp.AppEvents.lidBlackout.value && com.dualamp.viz.VizStream.viewers.value == 0)) v?.onResume() }
+                Lifecycle.Event.ON_STOP -> { started = false; v?.onPause() }
                 else -> Unit
             }
         }
@@ -263,6 +298,67 @@ private fun PresetToast(overlayVisible: Boolean) {
     }
 }
 
+/** Lyrics for the playing song: off, still looking, none found, or found. */
+private sealed interface LyricsState {
+    data object Off : LyricsState
+    data object Loading : LyricsState
+    data object None : LyricsState
+    data class Found(val lyrics: Lyrics) : LyricsState
+}
+
+/** Line [i]'s text ("♪" for a gap between lines), or null past the end. */
+private fun lyricText(l: Lyrics, i: Int): String? = l.lines.getOrNull(i)?.text?.ifBlank { "♪" }
+/** The line being sung; "♪" before the first one. */
+private fun lyricLine(l: Lyrics, i: Int): String = if (i < 0) "♪" else lyricText(l, i) ?: "♪"
+
+/**
+ * Lyrics over the visualizer while the song info is hidden: the line being sung, with the ones before and after
+ * it dimmed, on a dark box (Settings > Lyrics background).
+ */
+@Composable
+private fun LyricsOverVisualizer(state: LyricsState, index: Int, visible: Boolean) {
+    val backdrop by Prefs.lyricsBackdrop.state.collectAsState()
+    BoxWithConstraints(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+        val small = maxWidth < 520.dp || maxHeight < 320.dp
+        // Only while a line is being sung: no box before the first line, and none at all for songs without lyrics.
+        val show = visible && state is LyricsState.Found && index >= 0
+        AnimatedVisibility(show, enter = fadeIn(tween(300)), exit = fadeOut(tween(400))) {
+            Column(
+                Modifier
+                    .widthIn(max = 760.dp)
+                    .background(Color.Black.copy(alpha = backdrop.coerceIn(0, 100) / 100f), RoundedCornerShape(18.dp))
+                    .padding(horizontal = if (small) 14.dp else 24.dp, vertical = if (small) 10.dp else 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                val l = (state as? LyricsState.Found)?.lyrics
+                if (l != null) {
+                    androidx.compose.animation.AnimatedContent(
+                        targetState = index,
+                        transitionSpec = {
+                            (androidx.compose.animation.slideInVertically(tween(260)) { it / 4 } + fadeIn(tween(260))) togetherWith
+                                (androidx.compose.animation.slideOutVertically(tween(200)) { -it / 4 } + fadeOut(tween(200)))
+                        },
+                        label = "lyrics",
+                    ) { i ->
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            val dim = Color.White.copy(alpha = 0.68f)
+                            val side = if (small) 14.sp else 19.sp
+                            if (i > 0) lyricText(l, i - 1)?.let {
+                                Text(it, color = dim, fontSize = side, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                            Text(lyricLine(l, i), color = Color.White, fontWeight = FontWeight.Bold, fontSize = if (small) 20.sp else 30.sp,
+                                lineHeight = if (small) 25.sp else 37.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 4.dp))
+                            lyricText(l, i + 1)?.let {
+                                Text(it, color = dim, fontSize = side, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun Overlay(
     song: Song?,
@@ -271,6 +367,9 @@ private fun Overlay(
     shuffle: Boolean,
     repeatMode: Int,
     queuePos: Pair<Int, Int>?,
+    lyricsState: LyricsState = LyricsState.Off,
+    /** The line being sung and the next one, while lyrics are on. */
+    lyric: Pair<String, String?>? = null,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val maxWidth = this.maxWidth
@@ -293,12 +392,12 @@ private fun Overlay(
         val short = maxHeight < 300.dp
         val smallScreen = maxHeight < 600.dp
         Column(Modifier.fillMaxSize().padding(horizontal = pad, vertical = pad * 0.75f)) {
-            TopRow(queuePos)
+            TopRow(queuePos, lyricsState)
             if (landscape) {
                 Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     ArtCard(song, Modifier.fillMaxHeight(0.92f))
                     Spacer(Modifier.width(pad * 1.2f))
-                    SongInfo(song, Modifier.weight(1f), large = maxHeight > 340.dp, compact = short)
+                    SongInfo(song, Modifier.weight(1f), large = maxHeight > 340.dp, compact = short, lyric = lyric)
                 }
             } else if (maxHeight > maxWidth * 1.3f) {
                 // Tall screen (Thor turned upright): big cover on top, song info underneath.
@@ -308,16 +407,16 @@ private fun Overlay(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     // Small screens: the cover leaves room for the title and artist below it.
-                    ArtCard(song, Modifier.size(if (smallScreen) minOf(maxWidth - pad * 2, maxHeight * 0.45f, maxHeight - 280.dp).coerceAtLeast(48.dp) else minOf(maxWidth - pad * 2, maxHeight * 0.45f)))
+                    ArtCard(song, Modifier.size(if (smallScreen) minOf(maxWidth - pad * 2, maxHeight * 0.45f, maxHeight - if (lyric != null) 312.dp else 280.dp).coerceAtLeast(48.dp) else minOf(maxWidth - pad * 2, maxHeight * 0.45f)))
                     Spacer(Modifier.height(pad))
-                    SongInfo(song, Modifier.fillMaxWidth(), large = maxWidth > 400.dp && !smallScreen, compact = smallScreen)
+                    SongInfo(song, Modifier.fillMaxWidth(), large = maxWidth > 400.dp && !smallScreen, compact = smallScreen, lyric = lyric)
                 }
             } else {
                 Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         ArtCard(song, Modifier.size(minOf(maxWidth * 0.36f, maxHeight * 0.4f)))
                         Spacer(Modifier.width(16.dp))
-                        SongInfo(song, Modifier.weight(1f), large = false, compact = smallScreen)
+                        SongInfo(song, Modifier.weight(1f), large = false, compact = smallScreen, lyric = lyric)
                     }
                 }
             }
@@ -330,11 +429,15 @@ private fun Overlay(
 }
 
 @Composable
-private fun TopRow(queuePos: Pair<Int, Int>?) {
+private fun TopRow(queuePos: Pair<Int, Int>?, lyricsState: LyricsState) {
     val preset by VizControl.currentPreset.collectAsState()
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        if (queuePos != null) {
-            Text("${queuePos.first} of ${queuePos.second}", color = TopDim, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (queuePos != null) {
+                Text("${queuePos.first} of ${queuePos.second}", color = TopDim, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                Spacer(Modifier.width(8.dp))
+            }
+            LyricsButton(lyricsState)
         }
         Spacer(Modifier.width(12.dp))
         // Tapping the preset name opens "add to visualizer folder". A long name scrolls.
@@ -358,6 +461,27 @@ private fun TopRow(queuePos: Pair<Int, Int>?) {
             }
             AddPresetMenu(menuPreset.value)
         }
+    }
+}
+
+/**
+ * Lyrics on / off, at the top left of the player in every layout (it never takes a place in the control rows).
+ * Purple while lyrics show, dim when the song has none.
+ */
+@Composable
+private fun LyricsButton(state: LyricsState) {
+    val on = state !is LyricsState.Off
+    Box(
+        Modifier
+            .clip(CircleShape)
+            .background(if (on) AccentViz.copy(alpha = 0.22f) else Color.Transparent)
+            .clickable { Prefs.lyricsOn.value = !Prefs.lyricsOn.value }
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Icons.Rounded.Lyrics, "Lyrics",
+            tint = when (state) { is LyricsState.Found -> AccentViz; LyricsState.Off -> Color.White.copy(alpha = 0.75f); else -> TopDim },
+            modifier = Modifier.size(18.dp))
     }
 }
 
@@ -568,7 +692,7 @@ private fun PlaylistMenu(song: Song, which: VizMenu) {
 
 @Composable
 /** [compact]: small screens (single-screen on the bottom): just the title and artist, each on one line that scrolls if long. */
-private fun SongInfo(song: Song?, modifier: Modifier, large: Boolean, compact: Boolean = false) {
+private fun SongInfo(song: Song?, modifier: Modifier, large: Boolean, compact: Boolean = false, lyric: Pair<String, String?>? = null) {
     Column(modifier) {
         Text(
             song?.title ?: "Nothing playing",
@@ -589,7 +713,20 @@ private fun SongInfo(song: Song?, modifier: Modifier, large: Boolean, compact: B
             maxLines = 1,
             modifier = Modifier.scrollIfLong(),
         )
-        if (song != null && !compact) {
+        if (lyric != null) {
+            // Lyrics on: the line being sung (and the next one) instead of the album and format.
+            if (compact) {
+                Text(lyric.first, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1,
+                    modifier = Modifier.padding(top = 2.dp).scrollIfLong())
+            } else {
+                val backdrop by Prefs.lyricsBackdrop.state.collectAsState()
+                Spacer(Modifier.height(10.dp))
+                Column(Modifier.background(Color.Black.copy(alpha = backdrop.coerceIn(0, 100) / 100f), RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    Text(lyric.first, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = if (large) 22.sp else 17.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    lyric.second?.let { Text(it, color = TopDim, fontSize = if (large) 16.sp else 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                }
+            }
+        } else if (song != null && !compact) {
             Spacer(Modifier.height(4.dp))
             val albumLine = listOfNotNull(song.album, song.year.takeIf { it > 0 }?.toString()).joinToString(" · ")
             Text(albumLine, color = TopDim, fontSize = if (large) 18.sp else 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
