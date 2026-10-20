@@ -337,6 +337,19 @@ gets the song, with other artists' releases they are on under **Appears on** on 
 - **Never split:** names that contain a separator ("Tyler, The Creator", "Earth, Wind & Fire", "Simon & Garfunkel"...).
 - **Features in song titles:** on or off.
 
+### Tidy your tags first: Fix Multiple Artists for Mp3tag
+
+**[Fix Multiple Artists for Mp3tag](https://github.com/njrozen/mp3tag-fix-multiple-artists)** (also by njrozen) is a free Windows companion
+for [Mp3tag](https://www.mp3tag.de/en/) with a one-click installer. Select songs in Mp3tag, then Right-click > Tools > Fix multiple artists.
+
+It finds every song whose Artist tag lists more than one artist, however it is written ("A & B feat. C", "A / B", "A X B",
+"A with B", "A (feat. B)"), highlights what separates the artists, and rewrites them all in one style you pick, with a preview
+before anything is saved and an undo. Duo and band names ("Simon & Garfunkel", "Earth, Wind & Fire") can be kept whole, and you
+can fix any separator it got wrong by hand.
+
+With DualAmp, pick a style DualAmp already recognizes, for example `Artist, Artist feat. Artist`. Then every song is listed
+under each of its artists without changing DualAmp's separators. Add the names you keep whole to DualAmp's **Never split** list too.
+
 This works best with tidy, consistent artist tags. **Mp3tag actions** (in the release as `DualAmp-Mp3tag-actions.zip`, source in `mp3tag/`)
 help: copy the `.mta` files to `%APPDATA%Mp3tagdatactions` and restart Mp3tag; they appear under Actions:
 
