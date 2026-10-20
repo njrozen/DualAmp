@@ -2,6 +2,7 @@ package com.dualamp.ui.library
 
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.material.icons.rounded.Computer
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.SideEffect
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Check
@@ -169,7 +170,8 @@ private class StackEntry(val page: Page) {
 private class PendingVizFolder(val preset: PresetManager.Preset?)
 
 /** An open "rename" dialog. */
-private class RenamePrompt(val title: String, val current: String, val confirm: String = "Rename", val onRename: (String) -> Unit)
+/** [exact]: the text as typed, spaces included, and blank allowed (separators). */
+private class RenamePrompt(val title: String, val current: String, val confirm: String = "Rename", val exact: Boolean = false, val onRename: (String) -> Unit)
 
 private class MenuOption(val label: String, val icon: ImageVector, val run: () -> Unit)
 private class MenuState(val title: String, val options: List<MenuOption>) {
@@ -181,14 +183,27 @@ private class MenuState(val title: String, val options: List<MenuOption>) {
  * iPod-style drill-down (Artist → Album → Song). Works by touch or entirely by gamepad.
  */
 @Composable
-fun LibraryScreen(modifier: Modifier = Modifier, showMiniPlayer: Boolean = true) {
-    // Without its own player bar the library shares the screen with the player (single-screen mode).
-    singleScreenLayout = !showMiniPlayer
-    com.dualamp.ui.LibraryTheme { LibraryScreenBody(modifier, showMiniPlayer) }
+fun LibraryScreen(
+    modifier: Modifier = Modifier,
+    showMiniPlayer: Boolean = true,
+    /** Single-screen mode (its own grid size). Side by side, the library has no player bar; with tabs it does. */
+    singleScreen: Boolean = !showMiniPlayer,
+    /** Single-screen tabs layout: the tabs in a bar at the bottom instead of the header. */
+    tabsAtBottom: Boolean = false,
+    /** Single-screen tabs layout: the player bar opens the big player (otherwise it opens the queue). */
+    onOpenPlayer: (() -> Unit)? = null,
+) {
+    singleScreenLayout = singleScreen
+    com.dualamp.ui.LibraryTheme { LibraryScreenBody(modifier, showMiniPlayer, tabsAtBottom, onOpenPlayer) }
+}
+
+/** The big player covers the library (single-screen tabs layout): the library takes no gamepad input then; B closes it. */
+object BigPlayer {
+    val open = kotlinx.coroutines.flow.MutableStateFlow(false)
 }
 
 @Composable
-private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean) {
+private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsAtBottom: Boolean, onOpenPlayer: (() -> Unit)?) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val localLib by LibraryRepository.library.collectAsState()
@@ -343,6 +358,7 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean) {
             disconnectServer = { com.dualamp.library.RemoteLibrary.active.value = false; LibraryRepository.refresh(); settingsTick++ },
             showAbout = { aboutOpen = true },
             showHelp = { helpDontShow = !Prefs.showControlsAtLaunch.value; helpOpen = true },
+            askText = { title, current, confirm, done -> renamePrompt = RenamePrompt(title, current, confirm, exact = true, onRename = done) },
             openAccessibility = {
                 AppEvents.markOwnLaunch()
                 context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -410,7 +426,7 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean) {
     val data = remember(lib, tab, playlists, top.page, sortModes, settingsTick, queueKey, presetKey, settingsKey, musicFolders, pcLink) {
         lib?.let { buildPage(top.page, it, playlists, player, chosenSort, desc, actions) }
     }
-    val fixedList = top.page == Page.Settings || top.page == Page.PcMusic || top.page == Page.MusicFolders || top.page == Page.Dsp || top.page == Page.Controls || vizPage || top.page == Page.Root(Category.QUEUE) || top.page is Page.Search
+    val fixedList = top.page == Page.Settings || top.page == Page.PcMusic || top.page == Page.MusicFolders || top.page is Page.ArtistSplitList || top.page == Page.Dsp || top.page == Page.Controls || vizPage || top.page == Page.Root(Category.QUEUE) || top.page is Page.Search
     // One view for the library categories and one for the pages inside them (artist, album, playlist...),
     // or the same for both (Settings > Library view). Grid unless changed.
     val rootPage = top.page is Page.Root
@@ -516,12 +532,20 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean) {
             },
     )
 
+    /** "Go to artist", or one "Go to <name>" for each artist on a song with several (Settings > Multiple artists). */
+    fun goToArtists(s: Song): List<MenuOption> {
+        val names = (com.dualamp.library.ArtistNames.split(s.primaryArtist) + com.dualamp.library.ArtistNames.credited(s))
+            .distinctBy { com.dualamp.library.artistKey(it) }
+        if (names.size <= 1) return listOf(MenuOption("Go to artist", Icons.Rounded.Person) { goTo(Page.ArtistPage(s.primaryArtist)) })
+        return names.take(6).map { n -> MenuOption("Go to $n", Icons.Rounded.Person) { goTo(Page.ArtistPage(n)) } }
+    }
+
     /** Long-press on the player bar's song (and similar): where to go from the song playing now. */
     fun songMenu(s: Song): MenuState {
         val liked = PlaylistStore.isLiked(s.id)
         return MenuState(s.title, listOf(
             MenuOption("Go to album", Icons.Rounded.Album) { goTo(Page.AlbumPage(s.albumId)) },
-            MenuOption("Go to artist", Icons.Rounded.Person) { goTo(Page.ArtistPage(s.primaryArtist)) },
+        ) + goToArtists(s) + listOf(
             MenuOption("Add to playlist…", Icons.AutoMirrored.Rounded.PlaylistAdd) { menu = playlistChooser(listOf(s)) },
             MenuOption(if (liked) "Remove from Liked Songs" else "Add to Liked Songs",
                 if (liked) Icons.Rounded.FavoriteBorder else Icons.Rounded.Favorite) { PlaylistStore.toggleLike(s.id) },
@@ -567,8 +591,7 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean) {
                 MenuOption("Remove from queue", Icons.Rounded.RemoveCircleOutline) { PlayerConnection.removeFromQueue(i) },
                 MenuOption("Add to playlist…", Icons.AutoMirrored.Rounded.PlaylistAdd) { menu = playlistChooser(listOf(s)) },
                 MenuOption("Go to album", Icons.Rounded.Album) { goTo(Page.AlbumPage(s.albumId)) },
-                MenuOption("Go to artist", Icons.Rounded.Person) { goTo(Page.ArtistPage(s.primaryArtist)) },
-            ))
+            ) + goToArtists(s))
         }
         if (e.kind == Kind.ACTION || e.kind == Kind.SETTING) return null
         val songs = e.songs()
@@ -587,7 +610,7 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean) {
             opts += MenuOption(if (liked) "Remove from Liked Songs" else "Add to Liked Songs",
                 if (liked) Icons.Rounded.FavoriteBorder else Icons.Rounded.Favorite) { PlaylistStore.toggleLike(s.id) }
             opts += MenuOption("Go to album", Icons.Rounded.Album) { goTo(Page.AlbumPage(s.albumId)) }
-            opts += MenuOption("Go to artist", Icons.Rounded.Person) { goTo(Page.ArtistPage(s.primaryArtist)) }
+            opts += goToArtists(s)
             val page = top.page
             if (page is Page.PlaylistPage && !page.id.startsWith("device:")) {
                 opts += MenuOption("Remove from this playlist", Icons.Rounded.RemoveCircleOutline) { PlaylistStore.remove(page.id, s.id) }
@@ -617,6 +640,23 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean) {
     val currentData by rememberUpdatedState(data)
     val currentView by rememberUpdatedState(view)
     val handleNav: (ControllerBus.Nav) -> Unit = handle@{ nav ->
+        // Big player open: B closes it; Start (Settings), Select (tabs), hold Select (search) and hold Start (visualizers)
+        // close it and do what they do; everything else is the player's.
+        if (BigPlayer.open.value) {
+            when (nav) {
+                ControllerBus.Nav.BACK -> { BigPlayer.open.value = false; return@handle }
+                ControllerBus.Nav.OPEN_PLAYER -> return@handle
+                ControllerBus.Nav.OPEN_SETTINGS -> {
+                    BigPlayer.open.value = false
+                    if (helpOpen) closeHelp()
+                    menu = null
+                    tab = BottomTab.SETTINGS
+                    return@handle
+                }
+                ControllerBus.Nav.NEXT_CATEGORY, ControllerBus.Nav.OPEN_SEARCH, ControllerBus.Nav.OPEN_VISUALIZERS -> BigPlayer.open.value = false
+                else -> return@handle
+            }
+        }
         openPrompt.value?.let { p ->
             if (nav == ControllerBus.Nav.BACK) p.cancel() else if (p.kb.handle(nav)) p.confirm()
             return@handle
@@ -628,6 +668,11 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean) {
                 // Nothing typed: B leaves search straight away (no second press needed).
                 if (kb.text.isEmpty()) back()
             } else if (kb.handle(nav)) keyboardOpen = false
+            return@handle
+        }
+        // Double-click L3 (single-screen tabs layout): the big player.
+        if (nav == ControllerBus.Nav.OPEN_PLAYER) {
+            if (onOpenPlayer != null && menu == null && !helpOpen) onOpenPlayer()
             return@handle
         }
         if (nav == ControllerBus.Nav.OPEN_SETTINGS) {
@@ -665,9 +710,10 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean) {
             return@handle
         }
         // Select: the next tab of the header switch (also on pages with nothing to browse, like the PC tab).
+        // From Visualizers or Settings: back to the tab you were in.
         if (nav == ControllerBus.Nav.NEXT_CATEGORY) {
             val tabs = BottomTab.entries.filter { it.inHeader }
-            tab = tabs[(tabs.indexOf(lastHeaderTab) + 1).mod(tabs.size)]
+            tab = if (!tab.inHeader) lastHeaderTab else tabs[(tabs.indexOf(lastHeaderTab) + 1).mod(tabs.size)]
             chipsFocus = false
             if (headerFocus != null) headerFocus = headerSpotFor(tab)
             return@handle
@@ -905,6 +951,7 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean) {
                 onVisualizers = { toggleTab(BottomTab.VISUALIZERS) },
                 onAbout = { aboutOpen = true },
                 focus = if (usingPad) headerFocus else null,
+                showTabs = !tabsAtBottom,
             )
             }
             if (top.page is Page.Root) {
@@ -969,9 +1016,19 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean) {
             if (keyboardOpen && searchKb != null && top.page is Page.Search) {
                 GamepadKeyboard(searchKb!!, highlight = true, onDone = { keyboardOpen = false })
             } else if (showMiniPlayer && top.page !is Page.Search) MiniPlayer(
-                onOpenQueue = { selectCategory(Category.QUEUE) },
+                onOpenQueue = onOpenPlayer ?: { selectCategory(Category.QUEUE) },
                 onAddToPlaylist = { song -> menu = playlistChooser(listOf(song)) },
                 onSongMenu = { song -> menu = songMenu(song) },
+            )
+            // Single-screen tabs layout, tabs at the bottom (Settings > Screens > Tab bar).
+            if (tabsAtBottom && !(keyboardOpen && top.page is Page.Search)) BottomTabBar(
+                tab = tab,
+                searching = top.page is Page.Search,
+                onTab = { tab = it },
+                onSearch = ::openSearch,
+                onVisualizers = { toggleTab(BottomTab.VISUALIZERS) },
+                onSettings = { toggleTab(BottomTab.SETTINGS) },
+                focus = if (usingPad) headerFocus else null,
             )
         }
 
@@ -993,8 +1050,9 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean) {
             title = r.title,
             initial = r.current,
             onDismiss = { renamePrompt = null },
-            onCreate = { name -> if (name.isNotBlank()) r.onRename(name); renamePrompt = null; if (r.confirm == "Rename") toast("Renamed to $name") },
+            onCreate = { name -> if (name.isNotBlank() || r.exact) r.onRename(name); renamePrompt = null; if (r.confirm == "Rename") toast("Renamed to $name") },
             confirmLabel = r.confirm,
+            exact = r.exact,
         )
     }
 
@@ -1075,6 +1133,8 @@ private fun Header(
     onAbout: () -> Unit,
     /** The header item the gamepad cursor is on, if any. */
     focus: HeaderSpot? = null,
+    /** False: the tabs and buttons are in [BottomTabBar] instead. */
+    showTabs: Boolean = true,
 ) {
     Row(
         Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 6.dp),
@@ -1106,6 +1166,7 @@ private fun Header(
                 maxLines = 1,
                 modifier = Modifier.weight(1f).padding(start = 4.dp).scrollIfLong(),
             )
+            if (!showTabs) return@Row
             val buttonsScroll = rememberScrollState()
             Row(
                 Modifier.weight(if (compact) 2.4f else 1.6f, fill = false).horizontalScroll(buttonsScroll),
@@ -1668,6 +1729,40 @@ private fun HeaderTabs(selected: BottomTab, onSelect: (BottomTab) -> Unit, compa
     }
 }
 
+/**
+ * The tabs in a bar at the bottom, like Spotify (single-screen tabs layout): PC, Your Library, Equalizer, Search,
+ * Visualizers and Settings, each with its icon and name. [focus]: where the gamepad cursor is (it moves as in the header).
+ */
+@Composable
+private fun BottomTabBar(
+    tab: BottomTab, searching: Boolean, onTab: (BottomTab) -> Unit, onSearch: () -> Unit,
+    onVisualizers: () -> Unit, onSettings: () -> Unit, focus: HeaderSpot?,
+) {
+    class Item(val spot: HeaderSpot, val label: String, val icon: ImageVector, val on: Boolean, val onClick: () -> Unit)
+    val items = listOf(
+        Item(HeaderSpot.PC, "PC Music", Icons.Rounded.Computer, tab == BottomTab.PC && !searching) { onTab(BottomTab.PC) },
+        Item(HeaderSpot.LIBRARY, "Your Library", Icons.Rounded.LibraryMusic, tab == BottomTab.LIBRARY && !searching) { onTab(BottomTab.LIBRARY) },
+        Item(HeaderSpot.EQUALIZER, "Equalizer", Icons.Rounded.Equalizer, tab == BottomTab.EQUALIZER) { onTab(BottomTab.EQUALIZER) },
+        Item(HeaderSpot.SEARCH, "Search", Icons.Rounded.Search, searching, onSearch),
+        Item(HeaderSpot.VISUALIZERS, "Visualizers", Icons.Rounded.AutoAwesome, tab == BottomTab.VISUALIZERS, onVisualizers),
+        Item(HeaderSpot.SETTINGS, "Settings", Icons.Rounded.Settings, tab == BottomTab.SETTINGS, onSettings),
+    )
+    Row(Modifier.fillMaxWidth().background(Surface2).navigationBarsPadding().padding(vertical = 4.dp)) {
+        items.forEach { it ->
+            Column(
+                Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
+                    .then(if (focus == it.spot) Modifier.border(2.dp, Accent, RoundedCornerShape(10.dp)) else Modifier)
+                    .clickable(onClick = it.onClick).padding(vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Icon(it.icon, null, tint = if (it.on) Accent else TextDim, modifier = Modifier.size(24.dp))
+                Text(it.label, color = if (it.on) TextMain else TextDim, style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 2.dp))
+            }
+        }
+    }
+}
+
 /** Keys of the entries currently picked in multi-select (read by the row and tile composables). */
 internal val selectedKeys = mutableStateOf<Set<String>>(emptySet())
 
@@ -1708,9 +1803,9 @@ private val openPrompt = mutableStateOf<OpenPrompt?>(null)
  * which on the Thor's wide bottom screen covers the whole app.
  */
 @Composable
-private fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, onCreate: (String) -> Unit, confirmLabel: String = "Create") {
+private fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, onCreate: (String) -> Unit, confirmLabel: String = "Create", exact: Boolean = false) {
     val kb = remember { KeyboardState(initial) }
-    val confirm = { if (kb.text.isNotBlank()) onCreate(kb.text.trim()) }
+    val confirm = { if (exact) onCreate(kb.text) else if (kb.text.isNotBlank()) onCreate(kb.text.trim()) }
     DisposableEffect(Unit) {
         openPrompt.value = OpenPrompt(kb, confirm, onDismiss)
         ControllerBus.textInput = true

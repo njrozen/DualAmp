@@ -10,7 +10,7 @@ A music player made with the **AYN Thor** and its two screens in mind. It works 
   Genres, Years, Folders, Queue), a sort menu, and three views: **List, Grid and Cover Flow**. Drill-down works like an
   iPod: Artist → their albums and singles → tracks. Long names scroll so you can read all of them.
 
-**Version 1.2** · made by njrozen and Claude.
+**Version 1.3** · made by njrozen and Claude.
 
 | Both screens: now playing on top, the library below (here in Cover Flow) |
 |:---:|
@@ -43,6 +43,18 @@ A music player made with the **AYN Thor** and its two screens in mind. It works 
   Both screens always turn together. In portrait the D-pad turns with the screen, so up on the D-pad is always up on
   screen.
 
+## What's new in 1.3
+
+- **Single-screen tabs layout** (Settings > Screens > Single-screen layout: Tabs), like Spotify: the library with its tabs at the bottom
+  or top and a player bar; tap it (or double-click L3) for the big player, close it with its back arrow or B. Swipe the cover to skip.
+  See [Single-screen tabs layout](#single-screen-tabs-layout).
+- **Multiple artists:** songs with several artists ("A, B", "A feat. B", "Song (feat. B)") are listed under each, with **Appears on**
+  on artist pages; the separators and the names never to split are editable. See [Multiple artists](#multiple-artists).
+- **Mp3tag actions** for tidying multi-artist tags (`DualAmp-Mp3tag-actions.zip` on the release page).
+- **Lyrics from the internet** show a small cloud next to the lyrics button.
+- **Controls:** Select from Visualizers or Settings goes back to the tab you were in.
+- **Fix:** the About box fits narrow screens (single-screen side by side in landscape).
+
 ## What's new in 1.2
 
 - **Lyrics:** timed lyrics over the visualizer and in the song info, from `.lrc` files next to your songs, the songs' tags, or
@@ -73,11 +85,12 @@ A music player made with the **AYN Thor** and its two screens in mind. It works 
 
 ## Installing
 
-Download from the [latest release](https://github.com/njrozen/DualAmp/releases/latest): **DualAmp-1.2.apk** (the app) and,
-optionally, **DualAmp-Server.exe** (for playing your PC's music).
+Download from the [latest release](https://github.com/njrozen/DualAmp/releases/latest): **DualAmp-1.3.apk** (the app) and,
+optionally, **DualAmp-Server.exe** (for playing your PC's music) and **DualAmp-Mp3tag-actions.zip** (for tidying
+artist tags, see [Multiple artists](#multiple-artists)).
 
-1. Copy `DualAmp-1.2.apk` to the Thor (or any Android 11+ device) and open it (allow installing from your file manager when asked), or from a PC:
-   `adb install DualAmp-1.2.apk`. It installs over 1.0 and 1.1 and keeps your settings and playlists.
+1. Copy `DualAmp-1.3.apk` to the Thor (or any Android 11+ device) and open it (allow installing from your file manager when asked), or from a PC:
+   `adb install DualAmp-1.3.apk`. It installs over earlier versions and keeps your settings and playlists.
 2. Start DualAmp. It asks for your music folder, offers the shoulder-button permission, then shows the help guide
    (Settings > Help opens it again).
 3. Optional, for the lid-closed buttons: Settings > Lid-closed buttons, and turn on DualAmp under
@@ -117,8 +130,8 @@ All of these can be installed from Android Studio's SDK Manager.
 | L1 / R1 | Previous / next track (also asleep) |
 | L2 | Next visualizer, or a random one from the folder (Settings > L2 button). Hold: rewind |
 | Playlist button (next to Like, top screen) | Add the playing song to a playlist |
-| Select | Next tab (PC, Library, Equalizer); hold to search with the keyboard open |
-| L3 | Next library view (grid, list, Cover Flow); hold to clear the queue (asks first) |
+| Select | Next tab (PC, Library, Equalizer); from Visualizers or Settings, back to the tab you were in; hold to search with the keyboard open. Over the big player (single-screen tabs layout), Select, Start and their holds close it first |
+| L3 | Next library view (grid, list, Cover Flow); hold to clear the queue (asks first); double-click in the single-screen tabs layout: the big player |
 | R3 | Show or hide the song info; double-click: lyrics on / off |
 
 The controller works whichever screen you touched last.
@@ -298,10 +311,40 @@ Run `server/build.cmd`: it compiles `DualAmp Server.exe` with the C# compiler th
 
 ## Lyrics
 
+A small cloud next to the lyrics button means the lyrics came from the internet (lrclib.net), not from a `.lrc` file or the song's tags.
+
 The lyrics button at the top left of the player (or double-click the right stick, R3) shows lyrics over the visualizer, on a dark box (Settings > Lyrics background),
 and the line being sung in the song info. Timed lyrics follow the song; Settings > Lyrics timing moves them sooner or later. DualAmp looks for
 a `.lrc` file next to the song (same name), then lyrics in the song's tags, then lrclib.net (Settings > Find lyrics online; sends the title and artist).
 Songs without lyrics just show the visualizer.
+
+## Single-screen tabs layout
+
+Settings > Screens > Single-screen layout: **Tabs** (made for portrait, works in landscape too). DualAmp opens on Your Library with the tabs
+(PC Music, Your Library, Equalizer, Search, Visualizers, Settings) at the bottom or top (Settings > Screens > Tab bar), and the player bar
+above the bottom like the bottom screen's. Tap the player bar for the big player: the full now-playing screen with the visualizer. Its back
+arrow (top left), B or Back closes it; while it is open the tabs cannot be pressed. Swipe the album art left / right for the next / previous
+song. **Side by side** (the default) keeps the player and the library both on screen.
+
+## Multiple artists
+
+Songs with more than one artist in their artist tag ("Kanye West, JAY-Z", "Drake feat. Rihanna") or a feature in the title
+("Flashing Lights (feat. Dwele)") are listed under each artist: a release goes under each of its album artists, and every credited artist
+gets the song, with other artists' releases they are on under **Appears on** on their page. Settings > Multiple artists:
+
+- **Artist separators:** the text between two names (spaces count: " x " is not "x"). Defaults: `, ` `; ` ` & ` ` feat. ` ` feat ` ` ft. `
+  ` featuring ` ` with ` ` x ` ` / `.
+- **Never split:** names that contain a separator ("Tyler, The Creator", "Earth, Wind & Fire", "Simon & Garfunkel"...).
+- **Features in song titles:** on or off.
+
+This works best with tidy, consistent artist tags. **Mp3tag actions** (in the release as `DualAmp-Mp3tag-actions.zip`, source in `mp3tag/`)
+help: copy the `.mta` files to `%APPDATA%Mp3tagdatactions` and restart Mp3tag; they appear under Actions:
+
+- **DualAmp - Move features from title to artist:** "Song (feat. B)" by "A" becomes "Song" by "A, B".
+- **DualAmp - Separate artists with commas:** " feat. ", " ft. ", " featuring ", " & ", " x ", ";" and " / " between artists become ", ".
+  It also splits band names like "Simon & Garfunkel", so use it on the files that need it.
+- **DualAmp - Album artist from first artist (if empty):** a song by "A, B" with no album artist gets "A", so the release goes
+  under the main artist.
 
 ## Streaming the visualizer
 

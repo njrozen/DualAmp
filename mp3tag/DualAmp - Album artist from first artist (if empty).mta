@@ -1,0 +1,5 @@
+[#0]
+T=5
+F=ALBUMARTIST
+1=$if(%albumartist%,%albumartist%,$regexp(%artist%,'(?i)^(.+?)(?:\s*,\s+|\s*;\s*|\s+(?:feat\.?|ft\.?|featuring|&|x)\s+).*$','$1'))
+

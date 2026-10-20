@@ -86,6 +86,8 @@ open class NowPlayingActivity : ComponentActivity() {
                 } else {
                     // Settings > Swap sides (single-screen): library first (left / top), player second.
                     val swap = com.dualamp.settings.Prefs.singleSwap.state.collectAsState().value
+                    val layout = com.dualamp.settings.Prefs.singleLayout.state.collectAsState().value
+                    if (layout == "TABS") TabsLayout() else
                     BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
                         if (maxWidth > maxHeight) {
                             Row(Modifier.fillMaxSize()) {
@@ -156,6 +158,35 @@ open class NowPlayingActivity : ComponentActivity() {
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean =
         ControllerBus.handleMotion(event) || super.dispatchGenericMotionEvent(event)
+}
+
+/**
+ * Single-screen tabs layout (Settings > Screens > Single-screen layout: Tabs), like Spotify: the library fills the
+ * screen, opening on Your Library, with its tabs at the top or bottom (Settings > Screens > Tab bar) and the player bar
+ * above the bottom. The player bar opens the big player over everything; its back arrow (or B, or Back) closes it.
+ */
+@androidx.compose.runtime.Composable
+private fun TabsLayout() {
+    // Double-click L3 opens the big player while this layout is up.
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        com.dualamp.input.ControllerBus.l3OpensPlayer = true
+        onDispose { com.dualamp.input.ControllerBus.l3OpensPlayer = false }
+    }
+    val open = com.dualamp.ui.library.BigPlayer.open.collectAsState().value
+    val bottom = com.dualamp.settings.Prefs.tabsPosition.state.collectAsState().value == "BOTTOM"
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+        LibraryScreen(Modifier.fillMaxSize(), showMiniPlayer = true, singleScreen = true, tabsAtBottom = bottom,
+            onOpenPlayer = { com.dualamp.ui.library.BigPlayer.open.value = true })
+        androidx.compose.animation.AnimatedVisibility(
+            visible = open,
+            enter = androidx.compose.animation.slideInVertically { it } + androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.slideOutVertically { it } + androidx.compose.animation.fadeOut(),
+        ) {
+            // Covers the library, so its tabs and buttons cannot be pressed until the big player closes.
+            NowPlayingScreen(Modifier.fillMaxSize(), onClose = { com.dualamp.ui.library.BigPlayer.open.value = false })
+        }
+    }
+    androidx.activity.compose.BackHandler(enabled = open) { com.dualamp.ui.library.BigPlayer.open.value = false }
 }
 
 /**

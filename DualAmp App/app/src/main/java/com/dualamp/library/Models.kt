@@ -90,7 +90,11 @@ private fun releaseName(s: String): String = s.lowercase()
     .replace(Regex("""\s+-\s+(single|ep)\s*$"""), "")
     .filter { it.isLetterOrDigit() }
 
-data class Artist(val name: String, val albums: List<Album>, val songs: List<Song>)
+/**
+ * [albums]: releases with this artist as an album artist. [songs]: everything they are on, features included.
+ * [appearsOn]: other artists' releases with songs they are credited on.
+ */
+data class Artist(val name: String, val albums: List<Album>, val songs: List<Song>, val appearsOn: List<Album> = emptyList())
 
 data class Genre(val name: String, val albums: List<Album>, val songs: List<Song>)
 
@@ -134,7 +138,9 @@ class Library(
     val albumById: Map<Long, Album> = albums.associateBy { it.id }
     /** Keyed by [artistKey], so "Kanye West" and "kanye west" are the same artist. */
     val artistByName: Map<String, Artist> = artists.associateBy { artistKey(it.name) }
+    /** Also for a combined tag ("A & B"): its first artist. */
     fun artist(name: String): Artist? = artistByName[artistKey(name)]
+        ?: ArtistNames.split(name).firstNotNullOfOrNull { artistByName[artistKey(it)] }
     val genreByName: Map<String, Genre> = genres.associateBy { it.name }
     val yearByValue: Map<Int, YearGroup> = years.associateBy { it.year }
 

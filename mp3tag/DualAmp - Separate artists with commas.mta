@@ -1,0 +1,5 @@
+[#0]
+T=5
+F=ARTIST
+1=$regexp(%artist%,'(?i)\s+(?:feat\.?|ft\.?|featuring|x|&)\s+|\s*;\s*|\s+/\s+',', ')
+

@@ -21,12 +21,12 @@ import kotlinx.coroutines.flow.SharedFlow
  *  Start      Settings (hold: visualizer folders)
  *  L1 / R1    previous / next track            R2          play / pause
  *  L2         next visualizer preset (hold: rewind)    R2 hold: fast forward
- *  L3         change the library view (hold: clear the queue, asks first)        R3   show / hide the song info (double-click: lyrics on / off)
+ *  L3         change the library view (hold: clear the queue, asks first; tabs layout, double-click: big player)        R3   show / hide the song info (double-click: lyrics on / off)
  */
 object ControllerBus {
 
     enum class Nav {
-        UP, DOWN, LEFT, RIGHT, SELECT, BACK, MENU, NOW_PLAYING_MENU, NEXT_CATEGORY, CLEAR_QUEUE, CHANGE_VIEW, OPEN_SETTINGS,
+        UP, DOWN, LEFT, RIGHT, SELECT, BACK, MENU, NOW_PLAYING_MENU, OPEN_PLAYER, NEXT_CATEGORY, CLEAR_QUEUE, CHANGE_VIEW, OPEN_SETTINGS,
         OPEN_SEARCH, OPEN_VISUALIZERS, KB_DELETE, KB_SPACE, KB_SYMBOLS, KB_CURSOR_LEFT, KB_CURSOR_RIGHT,
     }
 
@@ -96,9 +96,31 @@ object ControllerBus {
                 pendingHold?.let(main::removeCallbacks)
                 pendingHold = null
                 if (r3) rightStickClick()
+                else if (l3 && !holdFired && l3OpensPlayer) leftStickClick()
                 else if (!holdFired) navFlow.tryEmit(if (y) Nav.MENU else if (l3) Nav.CHANGE_VIEW else if (select) Nav.NEXT_CATEGORY else Nav.OPEN_SETTINGS)
             }
         }
+    }
+
+    /**
+     * Single-screen tabs layout: double-clicking L3 opens the big player (one click still changes the view, a moment
+     * later, once no second click came). Set while that layout is on screen.
+     */
+    @Volatile var l3OpensPlayer = false
+    private var l3Single: Runnable? = null
+    private var lastL3At = 0L
+
+    private fun leftStickClick() {
+        val now = android.os.SystemClock.uptimeMillis()
+        l3Single?.let(main::removeCallbacks)
+        l3Single = null
+        if (now - lastL3At < DOUBLE_CLICK_MS) {
+            lastL3At = 0L
+            navFlow.tryEmit(Nav.OPEN_PLAYER)
+            return
+        }
+        lastL3At = now
+        l3Single = Runnable { l3Single = null; navFlow.tryEmit(Nav.CHANGE_VIEW) }.also { main.postDelayed(it, DOUBLE_CLICK_MS) }
     }
 
     // R3: one click waits a moment for a second one; two clicks close together turn the lyrics on / off.

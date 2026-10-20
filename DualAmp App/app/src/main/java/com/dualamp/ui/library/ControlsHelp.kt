@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -56,6 +57,8 @@ object ControlsHelp {
             "One screen" to "Settings > Use both screens: Top or Bottom Screen. Opening DualAmp on the bottom screen (or as a Cocoon companion app) also runs it there alone",
             "Lyrics" to "The lyrics button (top left of the player) or double-click the right stick (R3). From .lrc files next to your songs, the songs' tags, or lrclib.net. Settings > Lyrics: background, timing",
             "Stream" to "Settings > Stream visualizer: open the address it shows in a TV, PC or phone browser on the same Wi-Fi",
+            "Tabs layout" to "Settings > Screens > Single-screen layout: Tabs. The library with tabs (top or bottom); the player bar opens the big player (back arrow or B closes it; swipe the cover to skip)",
+            "Several artists" to "Songs with several artists (\"A, B\", \"A feat. B\") are listed under each. Settings > Multiple artists sets the separators",
         ),
         "Library" to listOf(
             "Tabs" to "Playlists, Liked Songs, Artists, Albums, Singles, Songs, Genres, Years, Folders and the Queue",
@@ -104,7 +107,7 @@ object ControlsHelp {
             "Start" to "Settings (press again to close). Hold: visualizer folders",
             "L1 / R1" to "Previous / next song",
             "L2" to "Next visualizer, or a random one (Settings > L2 button). Hold: rewind",
-            "L3 (press left stick)" to "Next library view (grid, list, Cover Flow). Hold: clear the queue, keeping the current song (asks first)",
+            "L3 (press left stick)" to "Next library view (grid, list, Cover Flow). Hold: clear the queue, keeping the current song (asks first). Double-click (single-screen tabs layout): the big player",
             "R3 (press right stick)" to "Show / hide the song info on the top screen; double-click: lyrics on / off",
             "Select" to "Next tab: PC, Library, Equalizer. Hold: search with the keyboard open",
         ),
@@ -251,25 +254,30 @@ internal fun AboutOverlay(onClose: () -> Unit) {
     val maker = android.os.Build.MANUFACTURER.replaceFirstChar { it.uppercase() }
     val model = android.os.Build.MODEL
     val device = if (model.startsWith(maker, ignoreCase = true)) model else "$maker $model"
-    Box(
+    androidx.compose.foundation.layout.BoxWithConstraints(
         Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.7f)).clickable(onClick = onClose),
         contentAlignment = Alignment.Center,
     ) {
-        Surface(color = Surface2, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(0.7f)) {
-            Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        // Narrow (half the bottom screen, single-screen side by side): wider box, each label above its value, and it
+        // scrolls if it is still too tall.
+        val narrow = maxWidth < 420.dp
+        val short = maxHeight < 420.dp
+        Surface(color = Surface2, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(if (narrow) 0.92f else 0.7f)) {
+            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(if (narrow) 16.dp else 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(
-                    Modifier.size(72.dp).clip(RoundedCornerShape(18.dp)).background(Color(0xFF120F1F)),
+                    Modifier.size(if (short) 52.dp else 72.dp).clip(RoundedCornerShape(18.dp)).background(Color(0xFF120F1F)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Image(painterResource(com.dualamp.R.drawable.ic_launcher_foreground), null, Modifier.requiredSize(108.dp))
+                    Image(painterResource(com.dualamp.R.drawable.ic_launcher_foreground), null, Modifier.requiredSize(if (short) 78.dp else 108.dp))
                 }
                 Spacer(Modifier.height(12.dp))
                 Text("DualAmp", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text("Version ${com.dualamp.BuildConfig.VERSION_NAME}", color = TextDim, style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(16.dp))
-                AboutRow("Running on", "$device · Android ${android.os.Build.VERSION.RELEASE}")
-                AboutRow("Made by", "njrozen and Claude")
-                AboutRow("Visualizer", "projectM (MilkDrop compatible)")
+                AboutRow("Running on", "$device · Android ${android.os.Build.VERSION.RELEASE}", narrow)
+                AboutRow("Made by", "njrozen and Claude", narrow)
+                AboutRow("Visualizer", "projectM (MilkDrop compatible)", narrow)
                 Spacer(Modifier.height(16.dp))
                 Button(onClick = onClose) { Text("Close (A)") }
             }
@@ -278,7 +286,14 @@ internal fun AboutOverlay(onClose: () -> Unit) {
 }
 
 @Composable
-private fun AboutRow(label: String, value: String) {
+private fun AboutRow(label: String, value: String, stacked: Boolean = false) {
+    if (stacked) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Text(label, color = TextDim, style = MaterialTheme.typography.bodySmall)
+            Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        }
+        return
+    }
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Text(label, color = TextDim, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(110.dp))
         Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))

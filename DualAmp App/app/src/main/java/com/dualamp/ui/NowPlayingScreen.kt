@@ -44,6 +44,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -122,6 +123,7 @@ import com.dualamp.playback.PlayerConnection
 import com.dualamp.library.Lyrics
 import com.dualamp.library.LyricsRepository
 import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.animation.togetherWith
 import com.dualamp.settings.Prefs
@@ -134,8 +136,26 @@ import kotlinx.coroutines.delay
  * Top screen: MilkDrop visualizer filling the screen, with the song info layered over it.
  * The info fades out after a few seconds without input; touching the screen brings it back.
  */
+/** Set in the single-screen big player ([onClose] of [NowPlayingScreen]): its back arrow, and swiping the art skips songs. */
+private val LocalClosePlayer = androidx.compose.runtime.staticCompositionLocalOf<(() -> Unit)?> { null }
+
+/** [onClose]: shown as the big player of the single-screen tabs layout, with a back arrow that calls it. */
 @Composable
-fun NowPlayingScreen(modifier: Modifier = Modifier) {
+fun NowPlayingScreen(modifier: Modifier = Modifier, onClose: (() -> Unit)? = null) {
+    CompositionLocalProvider(LocalClosePlayer provides onClose) {
+        Box(modifier) {
+            NowPlayingScreenBody(Modifier.fillMaxSize())
+            // Always there (also while the song info has faded to the visualizer).
+            if (onClose != null) IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopStart).padding(4.dp)
+                .background(Color.Black.copy(alpha = 0.35f), CircleShape)) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Close the player", tint = Color.White)
+            }
+        }
+    }
+}
+
+@Composable
+private fun NowPlayingScreenBody(modifier: Modifier) {
     val player by PlayerConnection.state.collectAsState()
     val library by LibraryRepository.library.collectAsState()
     // 3-30 s; 2 or less (the slider's "Never") keeps the song info up.
@@ -433,6 +453,8 @@ private fun TopRow(queuePos: Pair<Int, Int>?, lyricsState: LyricsState) {
     val preset by VizControl.currentPreset.collectAsState()
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // Room for the big player's back arrow.
+            if (LocalClosePlayer.current != null) Spacer(Modifier.width(44.dp))
             if (queuePos != null) {
                 Text("${queuePos.first} of ${queuePos.second}", color = TopDim, style = MaterialTheme.typography.labelMedium, maxLines = 1)
                 Spacer(Modifier.width(8.dp))
@@ -479,9 +501,16 @@ private fun LyricsButton(state: LyricsState) {
             .padding(horizontal = 8.dp, vertical = 3.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(Icons.Rounded.Lyrics, "Lyrics",
-            tint = when (state) { is LyricsState.Found -> AccentViz; LyricsState.Off -> Color.White.copy(alpha = 0.75f); else -> TopDim },
-            modifier = Modifier.size(18.dp))
+        val tint = when (state) { is LyricsState.Found -> AccentViz; LyricsState.Off -> Color.White.copy(alpha = 0.75f); else -> TopDim }
+        // Found online (lrclib.net), not in a .lrc file or the song's tags: a cloud next to the icon.
+        val online = (state as? LyricsState.Found)?.lyrics?.source == "lrclib"
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Lyrics, if (online) "Lyrics (from the internet)" else "Lyrics", tint = tint, modifier = Modifier.size(18.dp))
+            if (online) {
+                Spacer(Modifier.width(3.dp))
+                Icon(Icons.Rounded.Cloud, null, tint = tint, modifier = Modifier.size(13.dp))
+            }
+        }
     }
 }
 
@@ -615,7 +644,19 @@ private fun ChooseFolderButton(modifier: Modifier = Modifier) {
 @Composable
 private fun ArtCard(song: Song?, modifier: Modifier) {
     val shape = RoundedCornerShape(14.dp)
-    Box(modifier.aspectRatio(1f)) {
+    // Big player: swipe the art left / right for the next / previous song.
+    val swipe = if (LocalClosePlayer.current == null) Modifier else {
+        val threshold = with(LocalDensity.current) { 70.dp.toPx() }
+        var dragged by remember { mutableFloatStateOf(0f) }
+        Modifier.pointerInput(Unit) {
+            detectHorizontalDragGestures(
+                onDragStart = { dragged = 0f },
+                onDragEnd = { if (dragged < -threshold) PlayerConnection.next() else if (dragged > threshold) PlayerConnection.previous() },
+                onHorizontalDrag = { change, dx -> change.consume(); dragged += dx },
+            )
+        }
+    }
+    Box(modifier.aspectRatio(1f).then(swipe)) {
         Surface(
             Modifier.fillMaxSize().shadow(18.dp, shape).clip(shape)
                 .combinedClickable(onClick = {}, onLongClick = { if (song != null) vizMenuOpen.value = VizMenu.SONG }),

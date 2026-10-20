@@ -77,6 +77,8 @@ sealed interface Page {
     data object Settings : Page
     data object Presets : Page
     data object MusicFolders : Page
+    /** Settings > Multiple artists: the separators ([keep] false) or the names never split ([keep] true). */
+    data class ArtistSplitList(val keep: Boolean) : Page
     data object Dsp : Page
     data object PcMusic : Page
     data object Controls : Page
@@ -99,6 +101,7 @@ sealed interface Page {
             Settings -> "settings"
             Presets -> "presets"
             MusicFolders -> "music_folders"
+            is ArtistSplitList -> "artist_split"
             Dsp -> "dsp"
             PcMusic -> "pc_music"
             Controls -> "controls"
@@ -194,6 +197,8 @@ class UiActions(
     val showAbout: () -> Unit,
     /** Help guide: what DualAmp does, how to use it, and the controls. */
     val showHelp: () -> Unit,
+    /** Asks for a line of text (title, starting text, button), then calls back with it (blank: removed). */
+    val askText: (String, String, String, (String) -> Unit) -> Unit,
 )
 
 // ---------------------------------------------------------------------------------------------
@@ -222,8 +227,10 @@ fun albumEntry(a: Album) = Entry(
 fun artistEntry(a: Artist) = Entry(
     key = "artist:${a.name}",
     title = a.name,
-    subtitle = "${plural(a.albums.size, "album")} · ${plural(a.songs.size, "song")}",
-    art = a.albums.firstOrNull()?.let { Art.Cover(it.id, it.coverSongId) } ?: Art.Symbol(Icons.Rounded.Person, a.name),
+    // Only featured on others' songs (Settings > Multiple artists): say so, and show one of those covers.
+    subtitle = if (a.albums.isEmpty() && a.appearsOn.isNotEmpty()) "Featured on ${plural(a.songs.size, "song")}"
+        else "${plural(a.albums.size, "album")} · ${plural(a.songs.size, "song")}",
+    art = (a.albums.firstOrNull() ?: a.appearsOn.firstOrNull())?.let { Art.Cover(it.id, it.coverSongId) } ?: Art.Symbol(Icons.Rounded.Person, a.name),
     kind = Kind.CONTAINER,
     round = true,
     target = Page.ArtistPage(a.name),
@@ -356,7 +363,7 @@ fun buildPage(
         val a = lib.artist(page.name)
         if (a == null) PageData(page.name, emptyList()) else {
             val (albums, singles) = artistReleases(a)
-            val heroArt = a.albums.firstOrNull()?.let { Art.Cover(it.id, it.coverSongId) } ?: Art.Symbol(Icons.Rounded.Person, a.name)
+            val heroArt = (a.albums.firstOrNull() ?: a.appearsOn.firstOrNull())?.let { Art.Cover(it.id, it.coverSongId) } ?: Art.Symbol(Icons.Rounded.Person, a.name)
             fun group(kind: String, title: String, list: List<Album>) =
                 Entry("rel:$kind:${a.name}", title, plural(list.size, "release"), Art.Symbol(Icons.Rounded.Album, "$kind${a.name}"),
                     Kind.CONTAINER, target = Page.ArtistReleases(a.name, kind), songs = { list.flatMap { it.songs } }, wide = true)
@@ -371,9 +378,12 @@ fun buildPage(
                         group("all", "All releases", albums + singles).takeIf { singles.isNotEmpty() && albums.isNotEmpty() },
                         group("albums", "Albums", albums).takeIf { albums.isNotEmpty() },
                         group("singles", "Singles", singles).takeIf { singles.isNotEmpty() },
+                        // Other artists' releases with songs this artist is on (Settings > Multiple artists).
+                        group("appears", "Appears on", a.appearsOn).takeIf { a.appearsOn.isNotEmpty() },
                     ) +
-                    // All releases inline: albums newest first, then singles newest first.
-                    albums.map { releaseEntry(it, "Album") } + singles.map { releaseEntry(it, "Single") },
+                    // All releases inline: albums newest first, then singles newest first, then what they appear on.
+                    albums.map { releaseEntry(it, "Album") } + singles.map { releaseEntry(it, "Single") } +
+                    a.appearsOn.map { appearsEntry(it) },
                 defaultView = ViewMode.GRID,
             )
         }
@@ -386,6 +396,7 @@ fun buildPage(
             val (title, list) = when (page.kind) {
                 "albums" -> "Albums" to albums.map { releaseEntry(it, "Album") }
                 "singles" -> "Singles" to singles.map { releaseEntry(it, "Single") }
+                "appears" -> "Appears on" to a.appearsOn.map { appearsEntry(it) }
                 else -> "All releases" to (albums.map { releaseEntry(it, "Album") } + singles.map { releaseEntry(it, "Single") })
             }
             PageData(title = "${a.name} · $title", entries = list, defaultView = ViewMode.GRID)
@@ -512,6 +523,31 @@ fun buildPage(
     )
 
     Page.Presets -> buildVisualizers(actions)
+
+    is Page.ArtistSplitList -> {
+        val p = com.dualamp.settings.Prefs
+        val setting = if (page.keep) p.artistKeep else p.artistSeparators
+        val defaults = if (page.keep) com.dualamp.library.ArtistNames.DEFAULT_KEEP else com.dualamp.library.ArtistNames.DEFAULT_SEPARATORS
+        val items = setting.value.split('\n').filter { it.isNotEmpty() }
+        fun save(list: List<String>) { setting.value = list.joinToString("\n"); LibraryRepository.refresh() }
+        // Spaces matter in separators (" x " is not "x"), so they show as ␣.
+        fun shown(s: String) = if (page.keep) s else s.replace(' ', '␣')
+        val noun = if (page.keep) "name" else "separator"
+        PageData(
+            title = if (page.keep) "Never split" else "Artist separators",
+            entries = listOf(
+                actionEntry("act:addsplit", "Add a $noun", Icons.Rounded.Add,
+                    if (page.keep) "An artist whose name has a separator in it, e.g. Tyler, The Creator"
+                    else "Text between two artists' names, spaces included, e.g. \" & \" or \", \"") {
+                    actions.askText("Add a $noun", "", "Add") { v -> if (v.isNotEmpty() && v !in items) save(items + v) }
+                },
+                actionEntry("act:resetsplit", "Reset to the defaults", Icons.Rounded.Refresh, plural(defaults.size, noun)) { save(defaults) },
+            ) + items.mapIndexed { i, item ->
+                Entry("split:$i:$item", shown(item), "A: edit (clear it to remove)", Art.Symbol(Icons.Rounded.Edit, item), Kind.ACTION,
+                    action = { actions.askText("Edit $noun", item, "Save") { v -> save(if (v.isEmpty()) items - item else items.map { if (it == item) v else it }) } })
+            },
+        )
+    }
 
     Page.MusicFolders -> PageData(
         title = "Music folders",
@@ -737,6 +773,20 @@ private fun buildSettings(actions: UiActions): PageData {
             Entry("set:pc", "PC music", if (com.dualamp.settings.Prefs.serverUrl.value.isBlank()) "Play your PC / foobar2000 library over Wi-Fi" else "${pcLinkLabel()} · ${com.dualamp.settings.Prefs.serverUrl.value}", Art.Symbol(Icons.Rounded.Computer, "pcmusic"), Kind.CONTAINER, target = Page.PcMusic),
             setting("rescan", "Rescan music library", "", action = actions.rescan),
 
+            header("Multiple artists"),
+            setting("splitartists", "Songs with several artists", onOff(p.splitArtists.value),
+                "List them under each artist (\"A, B\", \"A feat. B\"...). Works best with tidy, consistent artist tags") {
+                p.splitArtists.value = !p.splitArtists.value; LibraryRepository.refresh()
+            },
+            if (!p.splitArtists.value) null else Entry("set:separators", "Artist separators",
+                com.dualamp.library.ArtistNames.separators().joinToString("   ") { it.replace(' ', '␣') },
+                Art.Symbol(Icons.Rounded.Edit, "separators"), Kind.CONTAINER, target = Page.ArtistSplitList(keep = false)),
+            if (!p.splitArtists.value) null else Entry("set:keepnames", "Never split",
+                plural(com.dualamp.library.ArtistNames.keep().size, "artist") + " whose names have a separator, e.g. Tyler, The Creator",
+                Art.Symbol(Icons.Rounded.Edit, "keepnames"), Kind.CONTAINER, target = Page.ArtistSplitList(keep = true)),
+            if (!p.splitArtists.value) null else setting("titlefeat", "Features in song titles", onOff(p.artistsFromTitles.value),
+                "\"Song (feat. X)\" also lists the song under X") { p.artistsFromTitles.value = !p.artistsFromTitles.value; LibraryRepository.refresh() },
+
             header("Library view"),
             libraryViewSetting(true, if (p.sameViewEverywhere.value) "Library view" else "Library view: categories",
                 if (p.sameViewEverywhere.value) "Playlists, Artists, Albums... and the pages inside them" else "Playlists, Artists, Albums..."),
@@ -778,7 +828,16 @@ private fun buildSettings(actions: UiActions): PageData {
             setting("swap", "Swap screens", onOff(p.swapScreens.value), "If the screens open the wrong way round") {
                 p.swapScreens.value = !p.swapScreens.value; actions.relaunch()
             },
-            setting("singleswap", "Swap sides (single-screen)", onOff(p.singleSwap.value), "Library on the left in landscape, on top in portrait") {
+            colorChoice("singlelayout", "Single-screen layout",
+                "Side by side: the player and the library both on screen. Tabs: the library with tabs; the player bar opens the big player",
+                listOf("Side by side", "Tabs"), if (p.singleLayout.value == "TABS") "Tabs" else "Side by side") {
+                p.singleLayout.value = if (it == "Tabs") "TABS" else "SPLIT"
+                if (it == "Tabs") com.dualamp.ui.library.BigPlayer.open.value = false
+            },
+            if (p.singleLayout.value != "TABS") null else colorChoice("tabsposition", "Tab bar (single-screen tabs)",
+                "Where PC, Library, Equalizer, Search, Visualizers and Settings sit", listOf("Bottom", "Top"),
+                if (p.tabsPosition.value == "TOP") "Top" else "Bottom") { p.tabsPosition.value = if (it == "Top") "TOP" else "BOTTOM" },
+            if (p.singleLayout.value == "TABS") null else setting("singleswap", "Swap sides (single-screen)", onOff(p.singleSwap.value), "Library on the left in landscape, on top in portrait") {
                 p.singleSwap.value = !p.singleSwap.value
             },
             setting("orientation", "Screen orientation", com.dualamp.Orientation.label(p.orientation.value), "Both screens. Auto follows how you hold the Thor") {
@@ -900,6 +959,10 @@ private fun artistReleases(a: Artist): Pair<List<Album>, List<Album>> {
     val (singles, albums) = a.albums.partition { it.isSingle }
     return albums.sortedWith(newestFirst) to singles.sortedWith(newestFirst)
 }
+
+/** A release by other artists that [Artist.appearsOn]: its artist in the subtitle. */
+private fun appearsEntry(a: Album) =
+    albumEntry(a).copy(subtitle = listOfNotNull("Appears on", a.artist.takeIf { it.isNotBlank() }, a.year.takeIf { it > 0 }?.toString()).joinToString(" · "))
 
 /** Album entry whose subtitle says what kind of release it is. */
 private fun releaseEntry(a: Album, kind: String) =

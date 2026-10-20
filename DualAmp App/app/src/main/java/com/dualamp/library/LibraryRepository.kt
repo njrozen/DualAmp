@@ -127,12 +127,33 @@ object LibraryRepository {
             )
         }.sortedBy { it.title.lowercase() }
 
-        // Same artist whatever the capitalization; shown with its most common spelling.
-        val artists = albums.groupBy { artistKey(it.artist) }.map { (_, list) ->
-            val name = list.groupingBy { it.artist.trim() }.eachCount().maxByOrNull { it.value }!!.key
-            Artist(name, list.sortedByDescending { it.year }.map { it.copy(artist = name) }, list.flatMap { it.songs })
+        // Same artist whatever the capitalization; shown with its most common spelling. With several artists on a tag
+        // (Settings > Multiple artists) an album goes under each album artist, and a song under everyone credited on it.
+        val ownAlbums = LinkedHashMap<String, MutableList<Album>>()
+        val credits = HashMap<String, MutableList<Song>>()
+        val spellings = HashMap<String, MutableMap<String, Int>>()
+        fun spelled(name: String): String {
+            val key = artistKey(name)
+            spellings.getOrPut(key) { HashMap() }.merge(name.trim(), 1, Int::plus)
+            return key
+        }
+        for (al in albums) {
+            for (name in ArtistNames.split(al.artist).ifEmpty { listOf(al.artist) }) ownAlbums.getOrPut(spelled(name)) { ArrayList() } += al
+            for (s in al.songs) for (name in ArtistNames.credited(s)) credits.getOrPut(spelled(name)) { ArrayList() } += s
+        }
+        val albumOf = albums.associateBy { it.id }
+        val artists = (ownAlbums.keys + credits.keys).distinct().map { key ->
+            val name = spellings[key]!!.maxByOrNull { it.value }!!.key
+            val own = ownAlbums[key].orEmpty()
+            val ownIds = own.map { it.id }.toSet()
+            val featured = credits[key].orEmpty().filter { it.albumId !in ownIds }
+            val appearsOn = featured.map { it.albumId }.distinct().mapNotNull { albumOf[it] }
+            // A one-artist album shows that artist's usual spelling; a shared one keeps its tag ("JAY-Z & Kanye West").
+            fun named(al: Album) = if (ArtistNames.split(al.artist).size <= 1) al.copy(artist = name) else al
+            Artist(name, own.sortedByDescending { it.year }.map(::named), own.flatMap { it.songs } + featured,
+                appearsOn.sortedByDescending { it.year })
         }.sortedBy { sortKey(it.name) }
-        val albumArtist = artists.flatMap { a -> a.albums.map { it.id to a.name } }.toMap()
+        val albumArtist = artists.flatMap { a -> a.albums.filter { ArtistNames.split(it.artist).size <= 1 }.map { it.id to a.name } }.toMap()
         val unifiedAlbums = albums.map { al -> albumArtist[al.id]?.let { al.copy(artist = it) } ?: al }
 
         val genres = songs.filter { it.genre.isNotBlank() }.groupBy { it.genre.trim().lowercase() }.map { (_, list) ->

@@ -123,12 +123,22 @@ object Prefs {
     val gridColumnsSingle = Setting("grid_columns_single", 3)
     /** Single-screen mode: library on the left (landscape) / top (portrait), player on the other side. */
     val singleSwap = Setting("single_swap", false)
+    /** Single-screen layout: SPLIT (player and library side by side / stacked) or TABS (library with tabs, the player opens over it). */
+    val singleLayout = Setting("single_layout", "SPLIT")
+    /** Single-screen TABS layout: the tab bar at the TOP (in the header) or the BOTTOM. */
+    val tabsPosition = Setting("tabs_position", "BOTTOM")
     /** One view for the library categories and the pages inside them (an artist, album, playlist...). */
     val sameViewEverywhere = Setting("same_view_everywhere", true)
     val sortModes = Setting("lib_sort_modes", "")
 
     /** Stream the visualizer to browsers on the same Wi-Fi ([com.dualamp.viz.VizStream]). */
     val vizStream = Setting("viz_stream", false)
+
+    // Settings > Multiple artists: songs listed under each of their artists ([com.dualamp.library.ArtistNames]).
+    val splitArtists = Setting("split_artists", true)
+    val artistSeparators = Setting("artist_separators", com.dualamp.library.ArtistNames.DEFAULT_SEPARATORS.joinToString("\n"))
+    val artistKeep = Setting("artist_keep", com.dualamp.library.ArtistNames.DEFAULT_KEEP.joinToString("\n"))
+    val artistsFromTitles = Setting("artists_from_titles", true)
 
     // Lyrics on the player (the lyrics button, or double-click the right stick, R3).
     val lyricsOn = Setting("lyrics_on", false)
@@ -148,8 +158,8 @@ object Prefs {
         musicFolders, serverUrl, showPlaylistFiles, infoBackdrop, vizEnabled, lidButtons, orientation, showControlsAtLaunch, onboardingDone,
         dspEnabled, dspPreamp, dspBass, dspTreble, dspBalance, dspWidth, dspMono, dspLimiter,
         screens, swapScreens, overlayTimeoutSec, presetMode, presetDurationSec, vizReactivity, activeVizFolder, shufflePresets, l2Random, hardCuts,
-        vizQuality, vizFpsCap, showPresetName, libraryCategory, viewModes, themeBackground, themeText, themeSubText, themeAccent, themeIcon, coverGlowColor, coverGlowShape, coverGlowAnim, launchViewRoot, launchViewPage, coverGlowOpacity, gridColumns, gridColumnsSingle, singleSwap, sameViewEverywhere, sortModes,
-        lyricsOn, lyricsBackdrop, lyricsOffsetMs, lyricsOnline, vizStream,
+        vizQuality, vizFpsCap, showPresetName, libraryCategory, viewModes, themeBackground, themeText, themeSubText, themeAccent, themeIcon, coverGlowColor, coverGlowShape, coverGlowAnim, launchViewRoot, launchViewPage, coverGlowOpacity, gridColumns, gridColumnsSingle, singleSwap, singleLayout, tabsPosition, sameViewEverywhere, sortModes,
+        lyricsOn, lyricsBackdrop, lyricsOffsetMs, lyricsOnline, vizStream, splitArtists, artistSeparators, artistKeep, artistsFromTitles,
         queueIds, queueIndex, queuePositionMs,
     ) + eqBands
 
