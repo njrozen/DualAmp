@@ -29,7 +29,12 @@ object PresetManager {
     private const val ASSET_ROOT = "presets"
     private val TEXTURE_EXT = setOf("jpg", "jpeg", "png", "tga", "bmp", "dds")
 
-    data class Preset(val name: String, val category: String, val path: String, val bundled: Boolean)
+    data class Preset(val name: String, val category: String, val path: String, val bundled: Boolean) {
+        /** Stands for an album art preset (no file), so it cannot go in a folder. */
+        val isAlbumArt: Boolean get() = path.startsWith(ALBUM_ART_PREFIX)
+    }
+
+    const val ALBUM_ART_PREFIX = "albumart:"
 
     private lateinit var app: Context
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -43,8 +48,8 @@ object PresetManager {
     val userDir: File get() = File(app.filesDir, "presets")
     private val bundledTextureDir: File get() = File(app.filesDir, "bundled_textures")
 
-    /** Folders projectM searches for textures referenced by presets. */
-    val textureDirs: List<String> get() = listOf(bundledTextureDir.path, userDir.path)
+    /** Folders projectM searches for textures referenced by presets (and the album art covers). */
+    val textureDirs: List<String> get() = listOf(bundledTextureDir.path, userDir.path, AlbumArtViz.dir.path)
 
     fun init(context: Context) {
         app = context.applicationContext

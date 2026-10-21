@@ -1,11 +1,15 @@
 // JNI bridge between the Kotlin visualizer and projectM.
-// Every function here must be called on the GLSurfaceView render thread, with its context current.
+// Every function here must be called on the GLSurfaceView render thread, with its context current,
+// except the album art ones at the end, which don't touch OpenGL.
 
 #include <jni.h>
 #include <android/log.h>
 #include <projectM-4/projectM.h>
 
+#include "albumartpreset.h"
+
 #include <algorithm>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -46,6 +50,29 @@ std::string str(JNIEnv* env, jstring s) {
     const char* c = env->GetStringUTFChars(s, nullptr);
     std::string out(c);
     env->ReleaseStringUTFChars(s, c);
+    return out;
+}
+
+/** Android's ARGB ints (Bitmap.getPixels) as RGBA bytes. */
+std::vector<unsigned char> rgba(JNIEnv* env, jintArray argb) {
+    const jsize n = env->GetArrayLength(argb);
+    std::vector<unsigned char> out(static_cast<size_t>(n) * 4);
+    jint* px = env->GetIntArrayElements(argb, nullptr);
+    for (jsize i = 0; i < n; i++) {
+        const auto p = static_cast<uint32_t>(px[i]);
+        out[i * 4] = (p >> 16) & 0xff;
+        out[i * 4 + 1] = (p >> 8) & 0xff;
+        out[i * 4 + 2] = p & 0xff;
+        out[i * 4 + 3] = (p >> 24) & 0xff;
+    }
+    env->ReleaseIntArrayElements(argb, px, JNI_ABORT);
+    return out;
+}
+
+std::vector<float> floats(JNIEnv* env, jfloatArray array) {
+    if (!array) return {};
+    std::vector<float> out(env->GetArrayLength(array));
+    env->GetFloatArrayRegion(array, 0, static_cast<jsize>(out.size()), out.data());
     return out;
 }
 
@@ -168,6 +195,59 @@ JNIEXPORT jstring JNICALL
 Java_com_dualamp_viz_MilkNative_lastError(JNIEnv* env, jobject, jlong h) {
     auto* b = get(h);
     return env->NewStringUTF(b ? b->lastError.c_str() : "");
+}
+
+// ---- Album art presets (albumartpreset.h); no OpenGL, any thread ----
+
+JNIEXPORT jstring JNICALL
+Java_com_dualamp_viz_MilkNative_artTextureName(JNIEnv* env, jobject, jintArray argb) {
+    const auto pixels = rgba(env, argb);
+    return env->NewStringUTF(albumart::textureName(pixels.data(), pixels.size()).c_str());
+}
+
+/** main r, g, b, accent r, g, b */
+JNIEXPORT jfloatArray JNICALL
+Java_com_dualamp_viz_MilkNative_artPalette(JNIEnv* env, jobject, jintArray argb, jint width, jint height) {
+    const auto pixels = rgba(env, argb);
+    const albumart::Palette p = albumart::extractPalette(pixels.data(), width, height, width * 4);
+    const float values[6] = {p.main.r, p.main.g, p.main.b, p.accent.r, p.accent.g, p.accent.b};
+    jfloatArray out = env->NewFloatArray(6);
+    env->SetFloatArrayRegion(out, 0, 6, values);
+    return out;
+}
+
+/**
+ * [palettes] holds 6 floats per texture (see artPalette), [params] one value per albumart::Param.
+ * Returns the .milk text.
+ */
+JNIEXPORT jstring JNICALL
+Java_com_dualamp_viz_MilkNative_buildArtPreset(JNIEnv* env, jobject, jobjectArray textures, jfloatArray palettes,
+                                               jfloatArray weights, jint style, jfloatArray params, jboolean fineBands) {
+    const auto palette = floats(env, palettes);
+    const auto weight = floats(env, weights);
+    const auto values = floats(env, params);
+    std::vector<albumart::Layer> layers;
+    const jsize n = env->GetArrayLength(textures);
+    for (jsize i = 0; i < n; i++) {
+        auto s = static_cast<jstring>(env->GetObjectArrayElement(textures, i));
+        albumart::Layer layer;
+        layer.texture = str(env, s);
+        env->DeleteLocalRef(s);
+        if (palette.size() >= static_cast<size_t>(i + 1) * 6) {
+            const float* c = palette.data() + i * 6;
+            layer.palette.main = {c[0], c[1], c[2]};
+            layer.palette.accent = {c[3], c[4], c[5]};
+        }
+        layer.weight = i < static_cast<jsize>(weight.size()) ? weight[i] : 1.f;
+        layers.push_back(layer);
+    }
+    albumart::Params p;
+    p.style = static_cast<albumart::Style>(std::clamp(static_cast<int>(style), 0, albumart::kStyleCount - 1));
+    p.fineBands = fineBands;
+    for (int i = 0; i < albumart::kParamCount && i < static_cast<int>(values.size()); i++) {
+        p.set(static_cast<albumart::Param>(i), values[i]);
+    }
+    return env->NewStringUTF(albumart::buildPreset(layers, p).c_str());
 }
 
 } // extern "C"

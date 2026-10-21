@@ -410,13 +410,16 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
     val desc = sortSpec?.endsWith(":desc") == true
     val queueKey = if (top.page == Page.Root(Category.QUEUE)) player else null
     val vizPage = top.page == Page.Presets || top.page is Page.PresetCategory || top.page is Page.VizFolderPage
-    val presetKey = if (vizPage) listOf(presets, currentPreset, vizFolders, activeVizFolder) else null
+    val vizSource by Prefs.vizSource.state.collectAsState()
+    val presetKey = if (vizPage) listOf(presets, currentPreset, vizFolders, activeVizFolder, vizSource) else null
     // The DSP page shows the preset name, which depends on every band.
     val eqValues = Prefs.eqBands.map { it.state.collectAsState().value }
     val settingsKey = when (top.page) {
         Page.Settings -> listOf(presetMode, viewModes, Prefs.sameViewEverywhere.state.collectAsState().value,
             com.dualamp.ui.AppTheme.presetName, com.dualamp.ui.AppTheme.glowName, Prefs.coverGlowShape.state.collectAsState().value,
-            Prefs.coverGlowAnim.state.collectAsState().value, Prefs.launchViewRoot.state.collectAsState().value, Prefs.launchViewPage.state.collectAsState().value)
+            Prefs.coverGlowAnim.state.collectAsState().value, Prefs.launchViewRoot.state.collectAsState().value, Prefs.launchViewPage.state.collectAsState().value,
+            Prefs.vizSource.state.collectAsState().value, Prefs.artStyle.state.collectAsState().value, Prefs.artCycleStyles.state.collectAsState().value,
+            Prefs.artFineBands.state.collectAsState().value)
         Page.Dsp -> eqValues
         else -> null
     }

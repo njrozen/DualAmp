@@ -20,6 +20,7 @@ class DualAmpApp : Application() {
         VizFolders.init(this)
         LibraryRepository.init(this)
         PlayerConnection.connect(this)
+        com.dualamp.viz.AlbumArtViz.init(this)
         com.dualamp.viz.VizStream.appContext = this
         com.dualamp.viz.VizStream.apply()
     }

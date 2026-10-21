@@ -54,7 +54,17 @@ private class MilkRenderer : GLSurfaceView.Renderer {
     private var appliedLock: Boolean? = null
 
     private val failed = HashSet<String>()
+    /** The last MilkDrop preset (still set while album art shows, to carry on from there). */
     private var current: PresetManager.Preset? = null
+
+    // Album art (AlbumArtViz).
+    private var showingArt = false
+    /** Cover, style and sliders of the album art preset showing. */
+    private var artKey = ""
+    /** Cover whose preset projectM could not load: presets for that song. */
+    private var artFailed: String? = null
+    /** "Both": the next change shows album art. */
+    private var artTurn = true
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         // A new EGL context means every GL object of the old instance is gone.
@@ -73,7 +83,7 @@ private class MilkRenderer : GLSurfaceView.Renderer {
         if (handle == 0L) {
             handle = MilkNative.create(width, height, PresetManager.textureDirs.toTypedArray(), 48, 32)
             if (handle == 0L) Log.e(tag, "projectM failed to start")
-            current?.let { load(it, smooth = false) } ?: next(smooth = false)
+            if (!(showingArt && showArt(smooth = false))) current?.let { load(it, smooth = false) } ?: next(smooth = false)
         } else {
             MilkNative.resize(handle, width, height)
         }
@@ -88,8 +98,9 @@ private class MilkRenderer : GLSurfaceView.Renderer {
         capFrameRate()
         applySettings()
         // The preset list loads in the background; start as soon as it arrives.
-        if (current == null && PresetManager.presets.value.isNotEmpty()) next(smooth = false)
+        if (current == null && !showingArt && PresetManager.presets.value.isNotEmpty()) next(smooth = false)
         handleCommands()
+        followArt()
 
         val frames = AudioTap.read(pcm, MAX_FRAMES)
         when {
@@ -107,8 +118,13 @@ private class MilkRenderer : GLSurfaceView.Renderer {
 
         val events = MilkNative.pollEvents(handle)
         if (events and MilkNative.EVENT_FAILED != 0) {
-            current?.let { failed += it.path }
             Log.w(tag, MilkNative.lastError(handle))
+            if (showingArt) {
+                artFailed = AlbumArtViz.cover.value?.texture
+                showingArt = false
+            } else {
+                current?.let { failed += it.path }
+            }
             next(smooth = false)
         } else if (events and MilkNative.EVENT_SWITCH != 0 && VizControl.Mode.current() == VizControl.Mode.INTERVAL) {
             next(smooth = events and MilkNative.EVENT_HARD_CUT == 0)
@@ -144,9 +160,9 @@ private class MilkRenderer : GLSurfaceView.Renderer {
     private fun handleCommands() {
         while (true) {
             when (val cmd = VizControl.commands.poll() ?: return) {
-                VizControl.Command.Next -> step(1, smooth = true)
-                VizControl.Command.Previous -> step(-1, smooth = true)
-                VizControl.Command.Random -> random(smooth = true)
+                VizControl.Command.Next -> if (!artChange(1, smooth = true)) step(1, smooth = true)
+                VizControl.Command.Previous -> if (!artChange(-1, smooth = true)) step(-1, smooth = true)
+                VizControl.Command.Random -> if (!artChange(0, smooth = true)) random(smooth = true)
                 VizControl.Command.SongChanged -> if (VizControl.Mode.current() == VizControl.Mode.SONG) next(smooth = true)
                 is VizControl.Command.Load -> {
                     val preset = PresetManager.presets.value.firstOrNull { it.path == cmd.path } ?: continue
@@ -158,7 +174,68 @@ private class MilkRenderer : GLSurfaceView.Renderer {
 
     /** Automatic switch (timer, beat, song change): random or in order, following Settings > Shuffle presets. */
     private fun next(smooth: Boolean) {
-        if (Prefs.shufflePresets.value) random(smooth) else step(1, smooth)
+        val shuffle = Prefs.shufflePresets.value
+        if (artChange(if (shuffle) 0 else 1, smooth)) return
+        if (shuffle) random(smooth) else step(1, smooth)
+    }
+
+    /**
+     * A visualizer change when album art is to show: the next (+1), previous (-1) or a random (0) style,
+     * if styles change at all. False when a preset should show instead (presets chosen, or no cover).
+     */
+    private fun artChange(by: Int, smooth: Boolean): Boolean {
+        val source = AlbumArtViz.Source.current()
+        val art = source == AlbumArtViz.Source.ALBUM_ART || (source == AlbumArtViz.Source.BOTH && artTurn)
+        if (source == AlbumArtViz.Source.BOTH) artTurn = !artTurn
+        if (!art) return false
+        if (showingArt && !Prefs.artCycleStyles.value) return true
+        if (showingArt) {
+            val style = Prefs.artStyle.value
+            Prefs.artStyle.value = when (by) {
+                0 -> (style + 1 + Random.nextInt(ART_STYLES.size - 1)).mod(ART_STYLES.size)
+                else -> (style + by).mod(ART_STYLES.size)
+            }
+        }
+        return showArt(smooth)
+    }
+
+    /**
+     * Keeps the album art preset in step with the song's cover and the album art settings, and starts or
+     * stops it when Settings > Visualizer shows changes.
+     */
+    private fun followArt() {
+        val source = AlbumArtViz.Source.current()
+        val cover = AlbumArtViz.cover.value
+        if (showingArt) {
+            when {
+                source == AlbumArtViz.Source.PRESETS || cover == null -> {
+                    showingArt = false
+                    current?.let { load(it, smooth = true) } ?: next(smooth = true)
+                }
+                artKeyOf(cover) != artKey -> showArt(smooth = true)
+            }
+        } else if (source == AlbumArtViz.Source.ALBUM_ART && cover != null && cover.texture != artFailed) {
+            showArt(smooth = true)
+        }
+    }
+
+    private fun artKeyOf(cover: AlbumArtViz.Cover) =
+        "${cover.texture}|${Prefs.artStyle.value}|${AlbumArtViz.tweaks.value}|${Prefs.artFineBands.value}"
+
+    /** Loads the album art preset for the song playing. False when there is no cover (or it failed). */
+    private fun showArt(smooth: Boolean): Boolean {
+        val cover = AlbumArtViz.cover.value ?: return false
+        if (cover.texture == artFailed) return false
+        val style = Prefs.artStyle.value.coerceIn(ART_STYLES.indices)
+        val text = MilkNative.buildArtPreset(arrayOf(cover.texture), cover.palette, floatArrayOf(1f), style,
+            AlbumArtViz.paramValues(), Prefs.artFineBands.value)
+        MilkNative.loadPresetData(handle, text, smooth)
+        showingArt = true
+        artKey = artKeyOf(cover)
+        val name = "Album art: ${ART_STYLES[style]}"
+        Log.d("MilkSurfaceView", "$name (${cover.title})")
+        VizControl.publishPreset(PresetManager.Preset(name, "Album art", PresetManager.ALBUM_ART_PREFIX + ART_STYLES[style], bundled = false))
+        return true
     }
 
     /**
@@ -195,6 +272,7 @@ private class MilkRenderer : GLSurfaceView.Renderer {
 
     private fun load(preset: PresetManager.Preset, smooth: Boolean) {
         current = preset
+        showingArt = false
         Log.d("MilkSurfaceView", "Preset: ${preset.name}")
         VizControl.publishPreset(preset)
         if (preset.bundled) {

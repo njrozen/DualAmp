@@ -6,7 +6,14 @@ namespace libprojectM {
 namespace Audio {
 
 Loudness::Loudness(Loudness::Band band)
-    : m_band(band)
+    : m_start(SpectrumSamples * static_cast<int>(band) / 6)
+    , m_end(SpectrumSamples * (static_cast<int>(band) + 1) / 6)
+{
+}
+
+Loudness::Loudness(int startSample, int endSample)
+    : m_start(startSample)
+    , m_end(endSample)
 {
 }
 
@@ -28,11 +35,8 @@ auto Loudness::AverageRelative() const -> float
 
 void Loudness::SumBand(const std::array<float, SpectrumSamples>& spectrumSamples)
 {
-    int start = SpectrumSamples * static_cast<int>(m_band) / 6;
-    int end = SpectrumSamples * (static_cast<int>(m_band) + 1) / 6;
-
     m_current = 0.0f;
-    for (int sample = start; sample < end; sample++)
+    for (int sample = m_start; sample < m_end; sample++)
     {
         m_current += spectrumSamples[sample];
     }

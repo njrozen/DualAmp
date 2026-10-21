@@ -1,5 +1,8 @@
 #include "PCM.hpp"
 
+#include <algorithm>
+#include <cmath>
+
 namespace libprojectM {
 namespace Audio {
 
@@ -65,6 +68,27 @@ void PCM::UpdateFrameAudioData(double secondsSinceLastFrame, uint32_t frame)
     m_middles.Update(m_spectrumL, secondsSinceLastFrame, frame);
     m_treble.Update(m_spectrumL, secondsSinceLastFrame, frame);
 
+    // Mixxx/DualAmp patch: the same over FineBandCount bands, spaced logarithmically
+    // (like hearing) over the half of the spectrum that bass, mid and treble use.
+    if (m_fineBands.empty())
+    {
+        constexpr int lowest = 1;
+        constexpr int highest = SpectrumSamples / 2;
+        int start = lowest;
+        for (int band = 0; band < FineBandCount; band++)
+        {
+            int end = static_cast<int>(std::lround(lowest * std::pow(static_cast<double>(highest) / lowest,
+                                                                       static_cast<double>(band + 1) / FineBandCount)));
+            end = std::max(end, start + 1);
+            m_fineBands.emplace_back(start, end);
+            start = end;
+        }
+    }
+    for (auto& band : m_fineBands)
+    {
+        band.Update(m_spectrumL, secondsSinceLastFrame, frame);
+    }
+
 }
 
 auto PCM::GetFrameAudioData() const -> FrameAudioData
@@ -86,6 +110,12 @@ auto PCM::GetFrameAudioData() const -> FrameAudioData
 
     data.vol = (data.bass + data.mid + data.treb) * 0.333f;
     data.volAtt = (data.bassAtt + data.midAtt + data.trebAtt) * 0.333f;
+
+    for (size_t band = 0; band < m_fineBands.size() && band < FineBandCount; band++)
+    {
+        data.fineBands[band] = m_fineBands[band].CurrentRelative();
+        data.fineBandsAtt[band] = m_fineBands[band].AverageRelative();
+    }
 
     return data;
 }

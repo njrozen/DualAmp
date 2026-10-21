@@ -236,6 +236,19 @@ void MilkdropShader::LoadVariables(const PresetState& presetState, const PerFram
                                        blurMin[2],
                                        blurMax[2]});
 
+    // Mixxx/DualAmp patch: the fine loudness bands, four per uniform.
+    {
+        const auto& bands = presetState.audioData.fineBands;
+        const auto& bandsAtt = presetState.audioData.fineBandsAtt;
+        static const char* const current[] = {"_fb0", "_fb1", "_fb2", "_fb3"};
+        static const char* const attenuated[] = {"_fa0", "_fa1", "_fa2", "_fa3"};
+        for (int i = 0; i < 4; i++)
+        {
+            m_shader.SetUniformFloat4(current[i], {bands[i * 4], bands[i * 4 + 1], bands[i * 4 + 2], bands[i * 4 + 3]});
+            m_shader.SetUniformFloat4(attenuated[i], {bandsAtt[i * 4], bandsAtt[i * 4 + 1], bandsAtt[i * 4 + 2], bandsAtt[i * 4 + 3]});
+        }
+    }
+
 
     std::array<glm::mat4, 24> tempMatrices{};
 

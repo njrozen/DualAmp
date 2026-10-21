@@ -467,7 +467,7 @@ private fun TopRow(queuePos: Pair<Int, Int>?, lyricsState: LyricsState) {
             Row(
                 Modifier
                     .clip(RoundedCornerShape(50))
-                    .clickable(enabled = preset != null) { menuPreset.value = preset; vizMenuOpen.value = VizMenu.ADD_PRESET }
+                    .clickable(enabled = preset != null && preset?.isAlbumArt != true) { menuPreset.value = preset; vizMenuOpen.value = VizMenu.ADD_PRESET }
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

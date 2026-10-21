@@ -18,6 +18,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>
+#include <vector>
 
 
 namespace libprojectM {
@@ -112,6 +113,8 @@ private:
     Loudness m_bass{Loudness::Band::Bass};       //!< Beat detection/volume for the "bass" band.
     Loudness m_middles{Loudness::Band::Middles}; //!< Beat detection/volume for the "middles" band.
     Loudness m_treble{Loudness::Band::Treble};   //!< Beat detection/volume for the "treble" band.
+
+    std::vector<Loudness> m_fineBands; //!< Mixxx/DualAmp patch: FineBandCount logarithmic bands.
 };
 
 } // namespace Audio

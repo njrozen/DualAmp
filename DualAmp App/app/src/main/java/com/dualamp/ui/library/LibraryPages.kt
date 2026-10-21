@@ -42,6 +42,10 @@ import com.dualamp.playback.PlayerState
 import com.dualamp.ui.formatDurationLong
 import com.dualamp.ui.formatTime
 import com.dualamp.ui.plural
+import com.dualamp.settings.Prefs
+import com.dualamp.viz.ART_PARAMS
+import com.dualamp.viz.ART_STYLES
+import com.dualamp.viz.AlbumArtViz
 import com.dualamp.viz.PresetManager
 import com.dualamp.viz.VizControl
 import com.dualamp.viz.VizFolders
@@ -607,11 +611,20 @@ private fun buildVisualizers(actions: UiActions): PageData {
     val active = VizFolders.active
     val current = VizControl.currentPreset.value
     val entries = ArrayList<Entry>()
-    current?.let {
+    current?.takeUnless { it.isAlbumArt }?.let {
         entries += presetEntry(it).copy(key = "current", title = "Now showing: ${it.name}", subtitle = "Press Y or long-press to add it to a folder")
     }
+    // Album art: the visualizer built from the cover of the song playing, instead of the presets.
+    val albumArt = AlbumArtViz.Source.current() == AlbumArtViz.Source.ALBUM_ART
+    entries += actionEntry("act:albumart", "Album art", Icons.Rounded.Album,
+        if (albumArt) "Active · built from the cover of the song playing" else "Build the visualizer from the cover of the song playing") {
+        Prefs.vizSource.value = (if (albumArt) AlbumArtViz.Source.PRESETS else AlbumArtViz.Source.ALBUM_ART).name
+    }
     entries += actionEntry("act:allpresets", "Use all presets", Icons.Rounded.AutoAwesome,
-        if (active == null && VizFolders.activeType == null) "Active · ${plural(presets.size, "preset")}" else plural(presets.size, "preset")) { VizFolders.setActive(null) }
+        if (!albumArt && active == null && VizFolders.activeType == null) "Active · ${plural(presets.size, "preset")}" else plural(presets.size, "preset")) {
+        VizFolders.setActive(null)
+        if (albumArt) Prefs.vizSource.value = AlbumArtViz.Source.PRESETS.name
+    }
     entries += actionEntry("act:newvizfolder", "New visualizer folder", Icons.Rounded.Add) { actions.newVizFolder(null) }
     entries += VizFolders.folders.value.map { f ->
         Entry("vizfolder:${f.id}", f.name, plural(f.presetPaths.size, "preset"), Art.Symbol(Icons.Rounded.Folder, f.id),
@@ -870,6 +883,10 @@ private fun buildSettings(actions: UiActions): PageData {
 
             header("Visualizer"),
             setting("vizon", "Visualizer", onOff(p.vizEnabled.value), "Off shows the album art instead (also the eye button on the top screen)") { p.vizEnabled.value = !p.vizEnabled.value },
+            setting("vizsource", "Visualizer shows", AlbumArtViz.Source.current().label,
+                "Album art builds the visualizer from the cover of the song playing; it still moves with the music") {
+                p.vizSource.value = cycle(AlbumArtViz.Source.entries.toList(), AlbumArtViz.Source.current()).name
+            },
             Entry("set:presets", "Visualizers", "$presetCount presets · your visualizer folders", Art.Symbol(Icons.Rounded.AutoAwesome, "presets"),
                 Kind.CONTAINER, target = Page.Presets),
             setting("vizmode", "Change visualizer", VizControl.Mode.current().label) {
@@ -898,6 +915,7 @@ private fun buildSettings(actions: UiActions): PageData {
             },
             setting("import", "Import preset folder", "", "Copy a folder of .milk files and textures", actions.importPresets),
             setting("deletepresets", "Remove imported presets", "", action = actions.deletePresets),
+        ) + (if (AlbumArtViz.Source.current() == AlbumArtViz.Source.PRESETS) emptyList() else albumArtSettings()) + listOfNotNull(
 
             header("Help & controls"),
             Entry("set:help", "Help", "What DualAmp does and how to use it", Art.Symbol(Icons.Rounded.Info, "help"), Kind.SETTING, action = actions.showHelp),
@@ -985,6 +1003,33 @@ private fun libraryViewSetting(root: Boolean, title: String, subtitle: String): 
 }
 
 /** Settings row with a drop-down list of named colors (or presets). */
+/** Settings > Album art visualizer: the style, whether it changes, and a slider for each element. */
+private fun albumArtSettings(): List<Entry> {
+    val p = Prefs
+    val style = ART_STYLES[p.artStyle.value.coerceIn(ART_STYLES.indices)]
+    return listOf(
+        Entry("hdr:albumart", "Album art visualizer", "", Art.None, Kind.HEADER),
+        colorChoice("artstyle", "Album art style",
+            "Cover: pulsing in the middle · Melt: fills the screen and melts · Kaleidoscope · Tunnel · Living photo: the picture itself moves with the music",
+            ART_STYLES, style) {
+            p.artStyle.value = ART_STYLES.indexOf(it)
+        },
+        Entry("set:artcycle", "Change the style", "The arrows, L2, the timer and song changes step through the styles",
+            Art.Symbol(Icons.Rounded.Settings, "artcycle"), Kind.SETTING,
+            trailing = if (p.artCycleStyles.value) "With the visualizer" else "Never",
+            action = { p.artCycleStyles.value = !p.artCycleStyles.value }),
+        Entry("set:artbands", "Frequency detail",
+            "Every album art style. 16 bands: each part follows its own frequencies. (MilkDrop presets always use lows, mids and highs)",
+            Art.Symbol(Icons.Rounded.Settings, "artbands"), Kind.SETTING,
+            trailing = if (p.artFineBands.value) "16 bands" else "Lows, mids, highs",
+            action = { p.artFineBands.value = !p.artFineBands.value }),
+    ) + ART_PARAMS.mapIndexed { i, param ->
+        Entry("set:art${param.id}", param.label, param.subtitle, Art.Symbol(Icons.Rounded.Settings, "art${param.id}"), Kind.SETTING,
+            slider = SliderSpec(p.artParams[i], 0, 100, 5, "%"))
+    } + Entry("set:artreset", "Reset album art", "Every album art slider back to its default",
+        Art.Symbol(Icons.Rounded.Refresh, "artreset"), Kind.SETTING, action = { AlbumArtViz.resetTweaks() })
+}
+
 private fun colorChoice(key: String, title: String, subtitle: String, names: Collection<String>, current: String, set: (String) -> Unit) =
     Entry("set:$key", title, subtitle, Art.Symbol(Icons.Rounded.Settings, key), Kind.SETTING,
         trailing = current, choices = names.toList(), onChoose = set)

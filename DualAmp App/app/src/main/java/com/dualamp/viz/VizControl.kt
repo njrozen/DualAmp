@@ -46,7 +46,12 @@ object VizControl {
 
     /** L2: the next visualizer, or a random one of the folder (Settings > L2 button). */
     fun leftTrigger() = if (Prefs.l2Random.value) randomPreset() else nextPreset()
-    fun loadPreset(preset: PresetManager.Preset) { commands += Command.Load(preset.path) }
+    fun loadPreset(preset: PresetManager.Preset) {
+        if (preset.isAlbumArt) return
+        // Picking a preset while only album art shows switches back to presets.
+        if (AlbumArtViz.Source.current() == AlbumArtViz.Source.ALBUM_ART) Prefs.vizSource.value = AlbumArtViz.Source.PRESETS.name
+        commands += Command.Load(preset.path)
+    }
     fun songChanged() { commands += Command.SongChanged }
 
     fun setMode(mode: Mode) {

@@ -37,6 +37,13 @@ public:
     explicit Loudness(Band band);
 
     /**
+     * @brief Constructor for any range of spectrum samples (Mixxx/DualAmp patch: the fine bands).
+     * @param startSample First spectrum sample of the band.
+     * @param endSample One past the last spectrum sample of the band.
+     */
+    Loudness(int startSample, int endSample);
+
+    /**
      * @brief Updates the beat detection values and averages.
      * Must only be called once per frame.
      * @param spectrumSamples The current frame's spectrum analyzer samples to use for the update.
@@ -83,7 +90,8 @@ private:
      */
     static auto AdjustRateToFps(float rate, double secondsSinceLastFrame) -> float;
 
-    Band m_band{Band::Bass}; //!< The frequency band to use for this instance.
+    int m_start{0}; //!< First spectrum sample of this instance's band.
+    int m_end{0};   //!< One past the last spectrum sample of this instance's band.
 
     float m_current{};     //!< The current frame's sum of all frequency strengths in the current band.
     float m_average{};     //!< The short-term averaged value of m_current.

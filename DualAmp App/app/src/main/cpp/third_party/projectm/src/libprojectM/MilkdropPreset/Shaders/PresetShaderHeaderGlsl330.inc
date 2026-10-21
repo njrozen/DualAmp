@@ -34,6 +34,8 @@ uniform float4   _qe;           // q vars
 uniform float4   _qf;           // q vars
 uniform float4   _qg;           // q vars
 uniform float4   _qh;           // q vars bank 8 [q29-q32]
+uniform float4   _fb0, _fb1, _fb2, _fb3; // Mixxx/DualAmp patch: loudness in 16 log bands, low to high
+uniform float4   _fa0, _fa1, _fa2, _fa3; // (around 1.0 like bass/mid/treb); _fa = attenuated
 
 // note: in general, don't use the current time w/the *dynamic* rotations!
 

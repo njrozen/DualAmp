@@ -69,6 +69,16 @@ object Prefs {
     val infoBackdrop = Setting("info_backdrop", 50)
     /** Show the MilkDrop visualizer on the top screen (off: blurred album art instead). */
     val vizEnabled = Setting("viz_enabled", true)
+    /** What the visualizer shows: PRESETS, ALBUM_ART (built from the song's cover) or BOTH ([com.dualamp.viz.AlbumArtViz.Source]). */
+    val vizSource = Setting("viz_source", "PRESETS")
+    /** Album art style showing now ([com.dualamp.viz.ART_STYLES]). */
+    val artStyle = Setting("art_style", 0)
+    /** Visualizer changes (arrows, timer, song change) step through the album art styles. */
+    val artCycleStyles = Setting("art_cycle_styles", true)
+    /** Album art reacts to 16 frequency bands instead of lows, mids and highs. */
+    val artFineBands = Setting("art_fine_bands", false)
+    /** Album art sliders, 0-100 % of each [com.dualamp.viz.ART_PARAMS] range. */
+    val artParams = com.dualamp.viz.ART_PARAMS.map { Setting("art_${it.id}", it.defaultPercent) }
     /** Watch the system key log so shoulder buttons work with the lid closed (Android asks for log access). */
     val lidButtons = Setting("lid_buttons", false)
     /** Screen orientation for both screens: AUTO (follows the device), LANDSCAPE or PORTRAIT. */
@@ -160,8 +170,8 @@ object Prefs {
         screens, swapScreens, overlayTimeoutSec, presetMode, presetDurationSec, vizReactivity, activeVizFolder, shufflePresets, l2Random, hardCuts,
         vizQuality, vizFpsCap, showPresetName, libraryCategory, viewModes, themeBackground, themeText, themeSubText, themeAccent, themeIcon, coverGlowColor, coverGlowShape, coverGlowAnim, launchViewRoot, launchViewPage, coverGlowOpacity, gridColumns, gridColumnsSingle, singleSwap, singleLayout, tabsPosition, sameViewEverywhere, sortModes,
         lyricsOn, lyricsBackdrop, lyricsOffsetMs, lyricsOnline, vizStream, splitArtists, artistSeparators, artistKeep, artistsFromTitles,
-        queueIds, queueIndex, queuePositionMs,
-    ) + eqBands
+        queueIds, queueIndex, queuePositionMs, vizSource, artStyle, artCycleStyles, artFineBands,
+    ) + eqBands + artParams
 
     fun init(context: Context) {
         sp = context.getSharedPreferences("dualamp", Context.MODE_PRIVATE)

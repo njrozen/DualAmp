@@ -17,7 +17,7 @@ set(BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(ENABLE_DEBUG_POSTFIX OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/projectm EXCLUDE_FROM_ALL)
 
-add_library(milkbridge SHARED milk_bridge.cpp)
+add_library(milkbridge SHARED milk_bridge.cpp albumartpreset.cpp)
 target_link_libraries(milkbridge PRIVATE libprojectM::projectM GLESv3 EGL log android)
 target_compile_options(milkbridge PRIVATE -Wall -O2)
 set_target_properties(milkbridge PROPERTIES DEBUG_POSTFIX "")

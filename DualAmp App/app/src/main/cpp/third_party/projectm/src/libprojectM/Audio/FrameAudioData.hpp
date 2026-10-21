@@ -27,6 +27,11 @@ public:
     float vol{0.f};
     float volAtt{0.f};
 
+    // Mixxx/DualAmp patch: loudness in FineBandCount logarithmic bands, low to high,
+    // like bass/mid/treb (around 1.0), current and attenuated.
+    std::array<float, FineBandCount> fineBands{};
+    std::array<float, FineBandCount> fineBandsAtt{};
+
     std::array<float, WaveformSamples> waveformLeft;
     std::array<float, WaveformSamples> waveformRight;
 
