@@ -106,7 +106,7 @@ object ControlsHelp {
             "X / R2" to "Play / pause. Hold R2: fast forward",
             "Start" to "Settings (press again to close). Hold: visualizer folders",
             "L1 / R1" to "Previous / next song",
-            "L2" to "Next visualizer, or a random one (Settings > L2 button). Hold: rewind",
+            "L2" to "Next visualizer, or a random one (Settings > L2 button); with album art, the next style. Hold: rewind",
             "L3 (press left stick)" to "Next library view (grid, list, Cover Flow). Hold: clear the queue, keeping the current song (asks first). Double-click (single-screen tabs layout): the big player",
             "R3 (press right stick)" to "Show / hide the song info on the top screen; double-click: lyrics on / off",
             "Select" to "Next tab: PC, Library, Equalizer. Hold: search with the keyboard open",

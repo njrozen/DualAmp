@@ -896,7 +896,7 @@ private fun buildSettings(actions: UiActions): PageData {
                 Art.Symbol(Icons.Rounded.Settings, "duration"), Kind.SETTING,
                 slider = SliderSpec(p.presetDurationSec, 20, 120, 5, "s")),
             setting("shuffle", "Shuffle presets", onOff(p.shufflePresets.value), "Automatic changes pick at random; the arrows always go in order") { p.shufflePresets.value = !p.shufflePresets.value },
-            setting("l2", "L2 button", if (p.l2Random.value) "Random visualizer" else "Next visualizer", "Within the visualizer folder or type you are using") { p.l2Random.value = !p.l2Random.value },
+            setting("l2", "L2 button", if (p.l2Random.value) "Random visualizer" else "Next visualizer", "Within the visualizer folder or type you are using. With album art, L2 always goes to the next style") { p.l2Random.value = !p.l2Random.value },
             setting("vizstream", "Stream visualizer",
                 if (!p.vizStream.value) "Off" else if (VizStream.viewers.value > 0) "${VizStream.viewers.value} watching" else "On",
                 if (!p.vizStream.value) "Watch the visualizer on a TV, PC or phone on the same Wi-Fi, in its web browser"

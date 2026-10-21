@@ -21,8 +21,8 @@ android {
         applicationId = "com.dualamp"
         minSdk = 30
         targetSdk = 35
-        versionCode = 13
-        versionName = "1.3"
+        versionCode = 14
+        versionName = "1.4"
 
         ndk {
             // The Ayn Thor is arm64. x86_64 is kept so the app also runs in the emulator.

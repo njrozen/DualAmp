@@ -7,8 +7,13 @@ DualAmp's own code is under the MIT license (see `LICENSE`). It includes or uses
 - Source: https://github.com/projectM-visualizer/projectm
 - License: GNU Lesser General Public License 2.1 (`DualAmp App/app/src/main/cpp/third_party/projectm/LICENSE.txt`
   and `COPYING`).
-- projectM is built into the app from its source in this repository. The only change to it is a build fix in
-  `src/api/version.h.in` (version macros); build options are set in `DualAmp App/app/src/main/cpp/CMakeLists.txt`. Because the complete source of DualAmp and projectM is
+- projectM is built into the app from its source in this repository. Changes to it:
+  - a build fix in `src/api/version.h.in` (version macros);
+  - since DualAmp 1.4, 16 fine loudness bands for preset shaders, used by the album art visualizer
+    (`src/libprojectM/Audio/` Loudness, PCM, FrameAudioData and AudioConstants; `MilkdropPreset/MilkdropShader.cpp`
+    and `Shaders/PresetShaderHeaderGlsl330.inc`; each change is marked "Mixxx/DualAmp patch").
+
+  Build options are set in `DualAmp App/app/src/main/cpp/CMakeLists.txt`. Because the complete source of DualAmp and projectM is
   published here, anyone can change projectM and rebuild the app with it, as the LGPL requires.
 
 ## MilkDrop presets ("Cream of the Crop")

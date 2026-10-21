@@ -163,7 +163,13 @@ private class MilkRenderer : GLSurfaceView.Renderer {
                 VizControl.Command.Next -> if (!artChange(1, smooth = true)) step(1, smooth = true)
                 VizControl.Command.Previous -> if (!artChange(-1, smooth = true)) step(-1, smooth = true)
                 VizControl.Command.Random -> if (!artChange(0, smooth = true)) random(smooth = true)
-                VizControl.Command.SongChanged -> if (VizControl.Mode.current() == VizControl.Mode.SONG) next(smooth = true)
+                VizControl.Command.NextArtStyle -> if (showingArt) {
+                    Prefs.artStyle.value = (Prefs.artStyle.value + 1).mod(ART_STYLES.size)
+                    showArt(smooth = true)
+                } else {
+                    step(1, smooth = true)
+                }
+                VizControl.Command.SongChanged ->if (VizControl.Mode.current() == VizControl.Mode.SONG) next(smooth = true)
                 is VizControl.Command.Load -> {
                     val preset = PresetManager.presets.value.firstOrNull { it.path == cmd.path } ?: continue
                     load(preset, smooth = true)

@@ -15,6 +15,8 @@ object VizControl {
         data object Previous : Command
         data object Random : Command
         data object SongChanged : Command
+        /** Album art: the next style, in order (whatever the shuffle and style settings). */
+        data object NextArtStyle : Command
         data class Load(val path: String) : Command
     }
 
@@ -44,8 +46,17 @@ object VizControl {
     fun previousPreset() { commands += Command.Previous }
     fun randomPreset() { commands += Command.Random }
 
-    /** L2: the next visualizer, or a random one of the folder (Settings > L2 button). */
-    fun leftTrigger() = if (Prefs.l2Random.value) randomPreset() else nextPreset()
+    /**
+     * L2: the next visualizer, or a random one of the folder (Settings > L2 button). While album art
+     * shows, always the next album art style, in order.
+     */
+    fun leftTrigger() {
+        when {
+            _currentPreset.value?.isAlbumArt == true -> commands += Command.NextArtStyle
+            Prefs.l2Random.value -> randomPreset()
+            else -> nextPreset()
+        }
+    }
     fun loadPreset(preset: PresetManager.Preset) {
         if (preset.isAlbumArt) return
         // Picking a preset while only album art shows switches back to presets.

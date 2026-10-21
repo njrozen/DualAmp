@@ -10,7 +10,7 @@ A music player made with the **AYN Thor** and its two screens in mind. It works 
   Genres, Years, Folders, Queue), a sort menu, and three views: **List, Grid and Cover Flow**. Drill-down works like an
   iPod: Artist → their albums and singles → tracks. Long names scroll so you can read all of them.
 
-**Version 1.3** · made by njrozen and Claude.
+**Version 1.4** · made by njrozen and Claude.
 
 | Both screens: now playing on top, the library below (here in Cover Flow) |
 |:---:|
@@ -42,6 +42,17 @@ A music player made with the **AYN Thor** and its two screens in mind. It works 
 - **Settings > Screen orientation:** Auto (follows how you hold the device), Landscape or Portrait (either way up).
   Both screens always turn together. In portrait the D-pad turns with the screen, so up on the D-pad is always up on
   screen.
+
+## What's new in 1.4
+
+- **Album art visualizer:** the visualizer can be built from the cover of the song playing, instead of the MilkDrop
+  presets or taking turns with them (Settings > Visualizer shows, or Album art on the Visualizers page). It still
+  moves with the music, and takes its glow and waveform colours from the cover. Five styles: Cover, Melt,
+  Kaleidoscope, Tunnel and **Living photo** (the picture itself bulges, ripples, sways, splits colours and glitches
+  with the music), with a slider for every part. See [Album art visualizer](#album-art-visualizer).
+- **Frequency detail:** the album art styles can follow lows, mids and highs, or 16 frequency bands so each part of
+  the picture follows its own frequencies.
+- **L2 with album art** always goes to the next style, in order.
 
 ## What's new in 1.3
 
@@ -85,12 +96,12 @@ A music player made with the **AYN Thor** and its two screens in mind. It works 
 
 ## Installing
 
-Download from the [latest release](https://github.com/njrozen/DualAmp/releases/latest): **DualAmp-1.3.apk** (the app) and,
+Download from the [latest release](https://github.com/njrozen/DualAmp/releases/latest): **DualAmp-1.4.apk** (the app) and,
 optionally, **DualAmp-Server.exe** (for playing your PC's music) and **DualAmp-Mp3tag-actions.zip** (for tidying
 artist tags, see [Multiple artists](#multiple-artists)).
 
-1. Copy `DualAmp-1.3.apk` to the Thor (or any Android 11+ device) and open it (allow installing from your file manager when asked), or from a PC:
-   `adb install DualAmp-1.3.apk`. It installs over earlier versions and keeps your settings and playlists.
+1. Copy `DualAmp-1.4.apk` to the Thor (or any Android 11+ device) and open it (allow installing from your file manager when asked), or from a PC:
+   `adb install DualAmp-1.4.apk`. It installs over earlier versions and keeps your settings and playlists.
 2. Start DualAmp. It asks for your music folder, offers the shoulder-button permission, then shows the help guide
    (Settings > Help opens it again).
 3. Optional, for the lid-closed buttons: Settings > Lid-closed buttons, and turn on DualAmp under
@@ -128,7 +139,7 @@ All of these can be installed from Android Studio's SDK Manager.
 | X / R2 | Play / pause (R2 also works asleep, see below). Hold R2: fast forward |
 | Start | Settings (press again to close); hold for the visualizer folders |
 | L1 / R1 | Previous / next track (also asleep) |
-| L2 | Next visualizer, or a random one from the folder (Settings > L2 button). Hold: rewind |
+| L2 | Next visualizer, or a random one from the folder (Settings > L2 button). With album art: the next style, in order. Hold: rewind |
 | Playlist button (next to Like, top screen) | Add the playing song to a playlist |
 | Select | Next tab (PC, Library, Equalizer); from Visualizers or Settings, back to the tab you were in; hold to search with the keyboard open. Over the big player (single-screen tabs layout), Select, Start and their holds close it first |
 | L3 | Next library view (grid, list, Cover Flow); hold to clear the queue (asks first); double-click in the single-screen tabs layout: the big player |
@@ -147,7 +158,8 @@ last second or so, so presets jump harder; below 100 % calms them. What you hear
 
 **Visualizers:** Settings > Change visualizer: every N seconds (slider, 20-120 s), when the song changes, or
 locked (the lock button on the top screen). Settings > Visualizers lets you make your own folders of presets
-(Y / long-press a preset > Add to visualizer folder) and "Use only this folder".
+(Y / long-press a preset > Add to visualizer folder) and "Use only this folder". Settings > Visualizer shows can
+also build the visualizer from the song's cover (see [Album art visualizer](#album-art-visualizer)).
 
 **Rotation:** see [Screens, landscape and portrait](#screens-landscape-and-portrait). Alone on the bottom screen,
 DualAmp turns with the motion sensor and follows the system's auto-rotate switch.
@@ -217,6 +229,7 @@ gives Play now, Play next (move up) and Remove from queue.
 | Playback (Media3 ExoPlayer, notification, headset buttons) | `playback/PlaybackService.kt`, `playback/PlayerConnection.kt` |
 | Feeding audio to the visualizer | `playback/TapAudioSink.kt`, `audio/AudioTap.kt` |
 | MilkDrop rendering (projectM via JNI) | `viz/MilkSurfaceView.kt`, `cpp/milk_bridge.cpp` |
+| Album art visualizer | `viz/AlbumArtViz.kt`, `cpp/albumartpreset.cpp` (shared with the Mixxx visualizer) |
 | Preset list, import, shuffle | `viz/PresetManager.kt`, `viz/VizControl.kt` |
 | Library scan and grouping | `library/LibraryRepository.kt`, `library/Models.kt` |
 | Top screen UI | `ui/NowPlayingScreen.kt` |
@@ -240,6 +253,32 @@ copies decoded audio out of the player. DualAmp follows the same design with ope
 - **Settings → Import preset folder** copies any folder of `.milk` files and textures into app storage.
   Presets that projectM can't compile are skipped automatically.
 - Settings also cover how long each preset stays on, shuffle, switching on big beats, render resolution and frame cap.
+
+## Album art visualizer
+
+Settings > **Visualizer shows** picks MilkDrop presets, **Album art**, or **Both** (taking turns at every change).
+The Album art entry on the Visualizers page switches it on and off; picking a preset goes back to the presets.
+Songs without a cover show the presets.
+
+DualAmp turns the cover of the song playing into a MilkDrop preset of its own, so it reacts to the music like any
+preset. The glow and the waveform take the cover's own main and second colours. Styles (Settings > Album art style):
+
+- **Cover:** the cover in the middle, pulsing with the bass, with a glow, trails and the cover blurred behind it.
+- **Melt:** the cover fills the screen and melts with the mids.
+- **Kaleidoscope:** mirrored slices of the cover.
+- **Tunnel:** the cover lines a tunnel flying towards you.
+- **Living photo:** the picture stays recognisable but moves by its own content: bright parts bulge forward on
+  the bass, ripples run along its edges, rows sway with their frequencies, colours split on hi-hats and strips
+  jump sideways on big beats.
+
+**Change the style:** the arrows, the timer and song changes step through the styles (or "Never"). L2 always goes
+to the next style. **Frequency detail:** lows / mids / highs, or 16 bands: the glow round the cover, the melt, each
+kaleidoscope ring, each tunnel depth and each row of the living photo then follow their own frequencies. MilkDrop
+presets always use lows, mids and highs, which is what they are written for.
+
+Every part has a slider (Settings > Album art visualizer): cover size, bass pulse, warp, spin, trails, glow, treble
+sparkle, waveform, background art, colour drift, kaleidoscope slices, and the living photo's depth, outline
+ripples, frequency bands, colour split, beat glitches and breathing. **Reset album art** puts them back.
 
 ## Notes and limits
 
