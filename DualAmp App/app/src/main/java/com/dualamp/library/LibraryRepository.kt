@@ -99,7 +99,12 @@ object LibraryRepository {
     private suspend fun scan(): Library {
         // Only songs inside the folders the user picked count as their library.
         val roots = musicFolders
-        val local = querySongs().filter { s -> roots.any { s.path.startsWith("$it/") } }
+        val found = querySongs().filter { s -> roots.any { s.path.startsWith("$it/") } }
+        // Leaks / unreleased songs, from their comment tag (Settings > Leaks & unreleased).
+        val local = if (!Prefs.separateLeaks.value) found else {
+            val comments = Comments.read(app, found)
+            found.map { s -> if (Leaks.isLeak(comments[s.id])) s.copy(leak = true) else s }
+        }
         // Songs shared by DualAmp Server on a PC go to their own "PC" tab, not this library.
         val server = Prefs.serverUrl.value
         val remote = if (server.isBlank() || !RemoteLibrary.active.value) emptyList() else RemoteLibrary.fetchSongs(app, server)
@@ -185,6 +190,7 @@ object LibraryRepository {
             MediaStore.Audio.Media.MIME_TYPE,
             MediaStore.Audio.Media.DATE_ADDED,
             MediaStore.Audio.Media.BITRATE,
+            MediaStore.Audio.Media.DATE_MODIFIED,
         )
         val out = ArrayList<Song>()
         app.contentResolver.query(
@@ -211,6 +217,7 @@ object LibraryRepository {
                     mime = str(11),
                     dateAdded = c.getLong(12),
                     bitrate = c.getInt(13),
+                    modified = c.getLong(14),
                 )
             }
         }

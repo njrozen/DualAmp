@@ -14,6 +14,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
@@ -79,7 +80,9 @@ fun AlbumArt(
     BoxWithConstraints(modifier.aspectRatio(1f).clip(shape)) {
         val px = with(LocalDensity.current) { maxWidth.toPx().toInt().coerceAtLeast(64) }
         val context = LocalContext.current
-        val image by produceState<ImageBitmap?>(Artwork.cached(albumId, px), albumId, px) {
+        // Loads again after a cover is changed (Edit song info).
+        val artRevision by Artwork.revision.collectAsState()
+        val image by produceState<ImageBitmap?>(Artwork.cached(albumId, px), albumId, px, artRevision) {
             // The state outlives a change of album, so always replace what it holds.
             value = Artwork.cached(albumId, px) ?: Artwork.load(context, albumId, songId, px)
         }

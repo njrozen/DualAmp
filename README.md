@@ -43,6 +43,15 @@ A music player made with the **AYN Thor** and its two screens in mind. It works 
   Both screens always turn together. In portrait the D-pad turns with the screen, so up on the D-pad is always up on
   screen.
 
+## What's new in 1.5
+
+- **Edit song info:** press Y on a song (or long-press it) and choose Edit song info to change its title, artist,
+  album artist, album, release date, genre, track and disc number, or its cover art (from your files or photos).
+  Settings > Edit song info (Music library) takes it out of the menu. See [Edit song info](#edit-song-info).
+- **Leaks & unreleased:** songs whose comment tag says "leak", "leaked" or "unreleased" get their own section on
+  the artist's page, split into albums and singles, apart from the official releases. See
+  [Leaks & unreleased](#leaks--unreleased).
+
 ## What's new in 1.4
 
 - **Album art visualizer:** the visualizer can be built from the cover of the song playing, instead of the MilkDrop
@@ -356,6 +365,23 @@ The lyrics button at the top left of the player (or double-click the right stick
 and the line being sung in the song info. Timed lyrics follow the song; Settings > Lyrics timing moves them sooner or later. DualAmp looks for
 a `.lrc` file next to the song (same name), then lyrics in the song's tags, then lrclib.net (Settings > Find lyrics online; sends the title and artist).
 Songs without lyrics just show the visualizer.
+
+## Leaks & unreleased
+
+Songs whose **comment** tag contains "leak", "leaks", "leaked" or "unreleased" (any capitals, as whole words) are kept apart from the
+official releases. On an artist's page, Albums and Singles show only official releases, and **Unreleased & leaks** opens a page of
+their own, split into Albums and Singles. A release counts as unreleased when more than half of its songs are marked, so an official
+album with one leaked bonus track stays with the albums. Settings > Leaks & unreleased turns this off.
+
+DualAmp reads the comment from the files themselves (MP3, FLAC, Ogg / Opus and M4A), once, and again only when a file changes, so the
+first scan after updating takes a little longer. Songs from DualAmp Server on a PC are not sorted this way yet.
+
+## Edit song info
+
+Open a song's menu (press Y, or long-press it) and choose **Edit song info** to change its title, artist, album artist, album,
+release date, genre, track number and disc number, or its cover art (pick an image from your files or photos). Nothing is written
+until you choose **Save**; Android may then ask once to let DualAmp change that file. The library reloads with the new info.
+Settings > Edit song info (under Music library) takes the option out of the menu. Songs from DualAmp Server can't be edited.
 
 ## Single-screen tabs layout
 

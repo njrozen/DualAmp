@@ -144,6 +144,11 @@ object Prefs {
     /** Stream the visualizer to browsers on the same Wi-Fi ([com.dualamp.viz.VizStream]). */
     val vizStream = Setting("viz_stream", false)
 
+    /** Settings > Leaks & unreleased: songs whose comment says so get their own section on artist pages. */
+    val separateLeaks = Setting("separate_leaks", true)
+    /** Settings > Music library > Edit song info: in songs' menus. */
+    val editTags = Setting("edit_tags", true)
+
     // Settings > Multiple artists: songs listed under each of their artists ([com.dualamp.library.ArtistNames]).
     val splitArtists = Setting("split_artists", true)
     val artistSeparators = Setting("artist_separators", com.dualamp.library.ArtistNames.DEFAULT_SEPARATORS.joinToString("\n"))
@@ -169,7 +174,7 @@ object Prefs {
         dspEnabled, dspPreamp, dspBass, dspTreble, dspBalance, dspWidth, dspMono, dspLimiter,
         screens, swapScreens, overlayTimeoutSec, presetMode, presetDurationSec, vizReactivity, activeVizFolder, shufflePresets, l2Random, hardCuts,
         vizQuality, vizFpsCap, showPresetName, libraryCategory, viewModes, themeBackground, themeText, themeSubText, themeAccent, themeIcon, coverGlowColor, coverGlowShape, coverGlowAnim, launchViewRoot, launchViewPage, coverGlowOpacity, gridColumns, gridColumnsSingle, singleSwap, singleLayout, tabsPosition, sameViewEverywhere, sortModes,
-        lyricsOn, lyricsBackdrop, lyricsOffsetMs, lyricsOnline, vizStream, splitArtists, artistSeparators, artistKeep, artistsFromTitles,
+        lyricsOn, lyricsBackdrop, lyricsOffsetMs, lyricsOnline, vizStream, splitArtists, artistSeparators, artistKeep, artistsFromTitles, separateLeaks, editTags,
         queueIds, queueIndex, queuePositionMs, vizSource, artStyle, artCycleStyles, artFineBands,
     ) + eqBands + artParams
 

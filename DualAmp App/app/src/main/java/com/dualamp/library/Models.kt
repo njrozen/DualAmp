@@ -25,6 +25,10 @@ data class Song(
     /** Set for songs streamed from DualAmp Server on a PC. */
     val remoteUrl: String? = null,
     val remoteArtUrl: String? = null,
+    /** When the file last changed (seconds), so its comment is read again after an edit. */
+    val modified: Long = 0,
+    /** Its comment tag says it is a leak or unreleased (Settings > Leaks & unreleased; see [Leaks]). */
+    val leak: Boolean = false,
 ) {
     val uri: Uri get() = remoteUrl?.let(Uri::parse) ?: contentUri(id)
     val isRemote: Boolean get() = remoteUrl != null
@@ -82,6 +86,8 @@ data class Album(
      * One song from a bigger album that happens to be alone in the library is still an album.
      */
     val isSingle: Boolean get() = songs.size == 1 && releaseName(songs.first().title) == releaseName(title)
+    /** Unreleased / leaked: more than half of its songs are (an official album with one leaked bonus track stays official). */
+    val isLeak: Boolean get() = songs.count { it.leak } * 2 > songs.size
 }
 
 /** Title compared without case, brackets ("(feat. X)", "[Remastered]"), " - Single" / " - EP" or punctuation. */

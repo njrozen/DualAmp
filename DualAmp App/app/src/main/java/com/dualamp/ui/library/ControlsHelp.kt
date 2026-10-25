@@ -59,6 +59,8 @@ object ControlsHelp {
             "Stream" to "Settings > Stream visualizer: open the address it shows in a TV, PC or phone browser on the same Wi-Fi",
             "Tabs layout" to "Settings > Screens > Single-screen layout: Tabs. The library with tabs (top or bottom); the player bar opens the big player (back arrow or B closes it; swipe the cover to skip)",
             "Several artists" to "Songs with several artists (\"A, B\", \"A feat. B\") are listed under each. Settings > Multiple artists sets the separators",
+            "Edit song info" to "In a song's menu (Y or long-press): change its title, artists, album, release date, genre, track, disc or cover art",
+            "Leaks & unreleased" to "Songs whose comment tag says leak, leaks, leaked or unreleased get their own section on artist pages (albums and singles), apart from the official ones",
         ),
         "Library" to listOf(
             "Tabs" to "Playlists, Liked Songs, Artists, Albums, Singles, Songs, Genres, Years, Folders and the Queue",

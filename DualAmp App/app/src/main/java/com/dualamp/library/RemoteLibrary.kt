@@ -192,6 +192,8 @@ object RemoteLibrary {
                 bitrate = t.optInt("bitrate"),
                 remoteUrl = "$serverUrl/stream/$id",
                 remoteArtUrl = "$serverUrl/art/$id",
+                // A comment from DualAmp Server, when it sends one.
+                leak = com.dualamp.settings.Prefs.separateLeaks.value && Leaks.isLeak(t.optString("comment")),
             )
         }
     }

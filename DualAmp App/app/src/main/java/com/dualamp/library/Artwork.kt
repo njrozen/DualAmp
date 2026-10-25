@@ -25,6 +25,16 @@ object Artwork {
 
     fun cached(albumId: Long, sizePx: Int): ImageBitmap? = cache.get(key(albumId, sizePx))
 
+    /** Bumped when a cover changes (Edit song info), so covers on screen load again. */
+    val revision = kotlinx.coroutines.flow.MutableStateFlow(0)
+
+    /** Forget [albumId]'s cover at every size (it was just changed). */
+    fun forget(albumId: Long) {
+        listOf(128, 256, 512, 1024).forEach { cache.remove(key(albumId, it)) }
+        synchronized(missing) { missing.removeAll { it.startsWith("$albumId@") } }
+        revision.value++
+    }
+
     /** Art addresses for albums streamed from a PC (negative album ids). */
     private val remoteArt = java.util.concurrent.ConcurrentHashMap<Long, String>()
 

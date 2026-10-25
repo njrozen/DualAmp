@@ -33,6 +33,9 @@ DualAmp's own code is under the MIT license (see `LICENSE`). It includes or uses
 - AndroidX, Jetpack Compose, Material 3 and Media3 / ExoPlayer: Apache License 2.0
   (https://www.apache.org/licenses/LICENSE-2.0).
 - Kotlin and kotlinx.coroutines: Apache License 2.0.
+- jaudiotagger 3.0.1 (Edit song info, since DualAmp 1.5): GNU Lesser General Public License 2.1
+  (https://bitbucket.org/ijabz/jaudiotagger). Used unchanged, as the library from Maven Central
+  (`net.jthink:jaudiotagger:3.0.1`).
 
 ## DualAmp Server
 

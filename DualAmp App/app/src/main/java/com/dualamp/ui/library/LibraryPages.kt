@@ -1,6 +1,7 @@
 package com.dualamp.ui.library
 
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Search
@@ -83,6 +84,8 @@ sealed interface Page {
     data object MusicFolders : Page
     /** Settings > Multiple artists: the separators ([keep] false) or the names never split ([keep] true). */
     data class ArtistSplitList(val keep: Boolean) : Page
+    /** Edit song info ([com.dualamp.library.TagEditor]) for one song. */
+    data class EditSong(val songId: Long) : Page
     data object Dsp : Page
     data object PcMusic : Page
     data object Controls : Page
@@ -106,6 +109,7 @@ sealed interface Page {
             Presets -> "presets"
             MusicFolders -> "music_folders"
             is ArtistSplitList -> "artist_split"
+            is EditSong -> "edit_song"
             Dsp -> "dsp"
             PcMusic -> "pc_music"
             Controls -> "controls"
@@ -203,6 +207,9 @@ class UiActions(
     val showHelp: () -> Unit,
     /** Asks for a line of text (title, starting text, button), then calls back with it (blank: removed). */
     val askText: (String, String, String, (String) -> Unit) -> Unit,
+    /** Edit song info: pick a new cover from files or photos / write the changes into the song's file. */
+    val pickCover: () -> Unit,
+    val saveTags: () -> Unit,
 )
 
 // ---------------------------------------------------------------------------------------------
@@ -367,13 +374,17 @@ fun buildPage(
         val a = lib.artist(page.name)
         if (a == null) PageData(page.name, emptyList()) else {
             val (albums, singles) = artistReleases(a)
+            // Comment tag says leak / unreleased (Settings > Leaks & unreleased): their own section, kept out of the rest.
+            val (leakAlbums, leakSingles) = artistReleases(a, leaks = true)
+            val leakCount = leakAlbums.size + leakSingles.size
             val heroArt = (a.albums.firstOrNull() ?: a.appearsOn.firstOrNull())?.let { Art.Cover(it.id, it.coverSongId) } ?: Art.Symbol(Icons.Rounded.Person, a.name)
             fun group(kind: String, title: String, list: List<Album>) =
                 Entry("rel:$kind:${a.name}", title, plural(list.size, "release"), Art.Symbol(Icons.Rounded.Album, "$kind${a.name}"),
                     Kind.CONTAINER, target = Page.ArtistReleases(a.name, kind), songs = { list.flatMap { it.songs } }, wide = true)
             PageData(
                 title = a.name,
-                hero = Hero(a.name, "Artist", "${plural(albums.size, "album")} · ${plural(singles.size, "single")} · ${plural(a.songs.size, "song")}",
+                hero = Hero(a.name, "Artist", "${plural(albums.size, "album")} · ${plural(singles.size, "single")}" +
+                    (if (leakCount > 0) " · $leakCount unreleased" else "") + " · ${plural(a.songs.size, "song")}",
                     heroArt, round = true),
                 entries = playActions(a.songs, shuffleOnly = true) +
                     Entry("all:${a.name}", "All songs", plural(a.songs.size, "song"), Art.Symbol(Icons.Rounded.LibraryMusic, a.name),
@@ -382,6 +393,7 @@ fun buildPage(
                         group("all", "All releases", albums + singles).takeIf { singles.isNotEmpty() && albums.isNotEmpty() },
                         group("albums", "Albums", albums).takeIf { albums.isNotEmpty() },
                         group("singles", "Singles", singles).takeIf { singles.isNotEmpty() },
+                        group("leaks", "Unreleased & leaks", leakAlbums + leakSingles).takeIf { leakCount > 0 },
                         // Other artists' releases with songs this artist is on (Settings > Multiple artists).
                         group("appears", "Appears on", a.appearsOn).takeIf { a.appearsOn.isNotEmpty() },
                     ) +
@@ -401,6 +413,14 @@ fun buildPage(
                 "albums" -> "Albums" to albums.map { releaseEntry(it, "Album") }
                 "singles" -> "Singles" to singles.map { releaseEntry(it, "Single") }
                 "appears" -> "Appears on" to a.appearsOn.map { appearsEntry(it) }
+                // Unreleased & leaks, split into albums and singles like the official releases.
+                "leaks" -> {
+                    val (la, ls) = artistReleases(a, leaks = true)
+                    "Unreleased & leaks" to (
+                        (if (la.isEmpty()) emptyList() else listOf(sectionHeader("leakalbums", "Albums")) + la.map { releaseEntry(it, "Unreleased album") }) +
+                            (if (ls.isEmpty()) emptyList() else listOf(sectionHeader("leaksingles", "Singles")) + ls.map { releaseEntry(it, "Unreleased single") })
+                        )
+                }
                 else -> "All releases" to (albums.map { releaseEntry(it, "Album") } + singles.map { releaseEntry(it, "Single") })
             }
             PageData(title = "${a.name} · $title", entries = list, defaultView = ViewMode.GRID)
@@ -527,6 +547,35 @@ fun buildPage(
     )
 
     Page.Presets -> buildVisualizers(actions)
+
+    is Page.EditSong -> {
+        val s = com.dualamp.library.TagEditor.session?.takeIf { it.song.id == page.songId }
+        if (s == null) PageData("Edit song info", emptyList()) else {
+            val f = s.fields
+            // One row per field: A / tap types a new value (clear it to remove the field; the title can't be empty).
+            fun row(key: String, label: String, value: String, hint: String, set: (com.dualamp.library.TagEditor.Fields, String) -> com.dualamp.library.TagEditor.Fields) =
+                Entry("edit:$key", label, value.ifBlank { "(empty)" }, Art.Symbol(Icons.Rounded.Edit, key), Kind.ACTION,
+                    trailing = hint, action = { actions.askText(label, value, "OK") { v -> com.dualamp.library.TagEditor.update { set(it, v) } } })
+            PageData(
+                title = "Edit song info",
+                hero = Hero(f.title.ifBlank { s.song.title }, f.artist, s.song.path.substringAfterLast('/'), Art.Cover(s.song.albumId, s.song.id)),
+                entries = listOf(
+                    row("title", "Title", f.title, "") { x, v -> x.copy(title = v) },
+                    row("artist", "Artist", f.artist, "") { x, v -> x.copy(artist = v) },
+                    row("albumartist", "Album artist", f.albumArtist, "") { x, v -> x.copy(albumArtist = v) },
+                    row("album", "Album", f.album, "") { x, v -> x.copy(album = v) },
+                    row("date", "Release date", f.date, "2021 or 2021-05-14") { x, v -> x.copy(date = v) },
+                    row("genre", "Genre", f.genre, "") { x, v -> x.copy(genre = v) },
+                    row("track", "Track number", f.track, "3 or 3/12") { x, v -> x.copy(track = v) },
+                    row("disc", "Disc number", f.disc, "1 or 1/2") { x, v -> x.copy(disc = v) },
+                    Entry("edit:cover", "Cover art", if (s.cover != null) "New cover picked: saved with the rest" else "Pick a picture from your files or photos",
+                        Art.Cover(s.song.albumId, s.song.id), Kind.ACTION, action = actions.pickCover),
+                    actionEntry("act:savetags", if (s.changed) "Save changes" else "Save", Icons.Rounded.Check,
+                        if (s.changed) "Writes them into the song's file (Android asks to allow it)" else "Nothing changed yet", action = actions.saveTags),
+                ),
+            )
+        }
+    }
 
     is Page.ArtistSplitList -> {
         val p = com.dualamp.settings.Prefs
@@ -785,6 +834,14 @@ private fun buildSettings(actions: UiActions): PageData {
             Entry("set:folders", "Music folders", plural(LibraryRepository.musicFolders.size, "folder") + " in your library", Art.Symbol(Icons.Rounded.Folder, "folders"), Kind.CONTAINER, target = Page.MusicFolders),
             Entry("set:pc", "PC music", if (com.dualamp.settings.Prefs.serverUrl.value.isBlank()) "Play your PC / foobar2000 library over Wi-Fi" else "${pcLinkLabel()} · ${com.dualamp.settings.Prefs.serverUrl.value}", Art.Symbol(Icons.Rounded.Computer, "pcmusic"), Kind.CONTAINER, target = Page.PcMusic),
             setting("rescan", "Rescan music library", "", action = actions.rescan),
+            setting("edittags", "Edit song info", onOff(p.editTags.value),
+                "In a song's menu (Y or long-press): change its title, artists, album, release date, genre, track, disc and cover art") {
+                p.editTags.value = !p.editTags.value
+            },
+            setting("leaks", "Leaks & unreleased", onOff(p.separateLeaks.value),
+                "Songs whose comment tag says leak, leaks, leaked or unreleased get their own section on artist pages, apart from the albums and singles") {
+                p.separateLeaks.value = !p.separateLeaks.value; LibraryRepository.refresh()
+            },
 
             header("Multiple artists"),
             setting("splitartists", "Songs with several artists", onOff(p.splitArtists.value),
@@ -971,10 +1028,16 @@ object LibraryNav {
     fun open(page: Page) { _requests.tryEmit(page) }
 }
 
-/** An artist's albums and singles ([Album.isSingle]), each newest first. */
-private fun artistReleases(a: Artist): Pair<List<Album>, List<Album>> {
+/** A section title inside a page (e.g. Albums / Singles under Unreleased & leaks). */
+private fun sectionHeader(key: String, title: String) = Entry("hdr:$key", title, "", Art.None, Kind.HEADER)
+
+/**
+ * An artist's albums and singles ([Album.isSingle]), each newest first: the official ones, or ([leaks]) the
+ * unreleased / leaked ones ([Album.isLeak]), so the two never mix.
+ */
+private fun artistReleases(a: Artist, leaks: Boolean = false): Pair<List<Album>, List<Album>> {
     val newestFirst = compareByDescending<Album> { it.year }.thenBy { it.title.lowercase() }
-    val (singles, albums) = a.albums.partition { it.isSingle }
+    val (singles, albums) = a.albums.filter { it.isLeak == leaks }.partition { it.isSingle }
     return albums.sortedWith(newestFirst) to singles.sortedWith(newestFirst)
 }
 

@@ -174,6 +174,12 @@ private class PendingVizFolder(val preset: PresetManager.Preset?)
 private class RenamePrompt(val title: String, val current: String, val confirm: String = "Rename", val exact: Boolean = false, val onRename: (String) -> Unit)
 
 private class MenuOption(val label: String, val icon: ImageVector, val run: () -> Unit)
+
+/** Edit song info's Save: [start] checks and asks for permission, [write] saves (filled in by the library screen). */
+private class TagSaveSteps {
+    var start: () -> Unit = {}
+    var write: () -> Unit = {}
+}
 private class MenuState(val title: String, val options: List<MenuOption>) {
     var cursor by mutableIntStateOf(0)
 }
@@ -292,6 +298,25 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri?.let(PresetManager::importFolder)
     }
+    // Edit song info: the save steps are filled in further down (they need back() and toast()).
+    val tagSave = remember { TagSaveSteps() }
+    // A new cover from your files or photos.
+    val coverLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) scope.launch {
+            val picked = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }?.let { com.dualamp.library.TagEditor.Cover(it, mime) }
+                }.getOrNull()
+            }
+            if (picked != null) com.dualamp.library.TagEditor.setCover(picked)
+        }
+    }
+    // Android's "allow DualAmp to modify this audio file?".
+    val writeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
+        if (r.resultCode == android.app.Activity.RESULT_OK) tagSave.write()
+        else Toast.makeText(context, "Not saved: DualAmp wasn't allowed to change the file", Toast.LENGTH_SHORT).show()
+    }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         LibraryRepository.refresh()
     }
@@ -359,6 +384,8 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
             showAbout = { aboutOpen = true },
             showHelp = { helpDontShow = !Prefs.showControlsAtLaunch.value; helpOpen = true },
             askText = { title, current, confirm, done -> renamePrompt = RenamePrompt(title, current, confirm, exact = true, onRename = done) },
+            pickCover = { AppEvents.markOwnLaunch(); coverLauncher.launch("image/*") },
+            saveTags = { tagSave.start() },
             openAccessibility = {
                 AppEvents.markOwnLaunch()
                 context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -426,7 +453,8 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
 
     // The PC music rows say whether the PC is connected.
     val pcLink by com.dualamp.library.RemoteLibrary.connection.collectAsState()
-    val data = remember(lib, tab, playlists, top.page, sortModes, settingsTick, queueKey, presetKey, settingsKey, musicFolders, pcLink) {
+    val tagSession = com.dualamp.library.TagEditor.session
+    val data = remember(lib, tab, playlists, top.page, sortModes, settingsTick, queueKey, presetKey, settingsKey, musicFolders, pcLink, tagSession) {
         lib?.let { buildPage(top.page, it, playlists, player, chosenSort, desc, actions) }
     }
     val fixedList = top.page == Page.Settings || top.page == Page.PcMusic || top.page == Page.MusicFolders || top.page is Page.ArtistSplitList || top.page == Page.Dsp || top.page == Page.Controls || vizPage || top.page == Page.Root(Category.QUEUE) || top.page is Page.Search
@@ -516,6 +544,31 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
 
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
 
+    // Edit song info: Save checks the fields, asks Android for permission to change the file if needed, then writes.
+    tagSave.write = {
+        val s = com.dualamp.library.TagEditor.session
+        if (s != null) scope.launch {
+            toast("Saving…")
+            com.dualamp.library.TagEditor.save(context, s)
+                .onSuccess { toast("Saved"); com.dualamp.library.TagEditor.session = null; back() }
+                .onFailure { toast("Couldn't save: ${it.message ?: it.javaClass.simpleName}") }
+        }
+    }
+    tagSave.start = start@{
+        val s = com.dualamp.library.TagEditor.session ?: return@start
+        com.dualamp.library.TagEditor.problem(s.fields)?.let { toast(it); return@start }
+        if (!s.changed) { toast("Nothing changed"); return@start }
+        if (com.dualamp.library.TagEditor.canWrite(context, s.song)) tagSave.write()
+        else {
+            AppEvents.markOwnLaunch()
+            writeLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(com.dualamp.library.TagEditor.writeRequest(context, s.song).intentSender).build())
+        }
+    }
+    /** "Edit song info" in a song's menu (Settings > Music library > Edit song info; songs on this device only). */
+    fun editInfo(s: Song): List<MenuOption> =
+        if (!Prefs.editTags.value || !com.dualamp.library.TagEditor.canEdit(s)) emptyList()
+        else listOf(MenuOption("Edit song info", Icons.Rounded.Edit) { com.dualamp.library.TagEditor.start(s); goTo(Page.EditSong(s.id)) })
+
     fun playlistChooser(songs: List<Song>): MenuState = MenuState(
         "Add to playlist",
         listOf(MenuOption("New playlist…", Icons.Rounded.Add) { newPlaylistSongs = songs }) +
@@ -552,7 +605,7 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
             MenuOption("Add to playlist…", Icons.AutoMirrored.Rounded.PlaylistAdd) { menu = playlistChooser(listOf(s)) },
             MenuOption(if (liked) "Remove from Liked Songs" else "Add to Liked Songs",
                 if (liked) Icons.Rounded.FavoriteBorder else Icons.Rounded.Favorite) { PlaylistStore.toggleLike(s.id) },
-        ))
+        ) + editInfo(s))
     }
 
     // The top screen can ask for a page (its art menu's Go to album / artist).
@@ -594,7 +647,7 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
                 MenuOption("Remove from queue", Icons.Rounded.RemoveCircleOutline) { PlayerConnection.removeFromQueue(i) },
                 MenuOption("Add to playlist…", Icons.AutoMirrored.Rounded.PlaylistAdd) { menu = playlistChooser(listOf(s)) },
                 MenuOption("Go to album", Icons.Rounded.Album) { goTo(Page.AlbumPage(s.albumId)) },
-            ) + goToArtists(s))
+            ) + goToArtists(s) + editInfo(s))
         }
         if (e.kind == Kind.ACTION || e.kind == Kind.SETTING) return null
         val songs = e.songs()
@@ -614,6 +667,7 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
                 if (liked) Icons.Rounded.FavoriteBorder else Icons.Rounded.Favorite) { PlaylistStore.toggleLike(s.id) }
             opts += MenuOption("Go to album", Icons.Rounded.Album) { goTo(Page.AlbumPage(s.albumId)) }
             opts += goToArtists(s)
+            opts += editInfo(s)
             val page = top.page
             if (page is Page.PlaylistPage && !page.id.startsWith("device:")) {
                 opts += MenuOption("Remove from this playlist", Icons.Rounded.RemoveCircleOutline) { PlaylistStore.remove(page.id, s.id) }

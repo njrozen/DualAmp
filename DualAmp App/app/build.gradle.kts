@@ -21,8 +21,8 @@ android {
         applicationId = "com.dualamp"
         minSdk = 30
         targetSdk = 35
-        versionCode = 14
-        versionName = "1.4"
+        versionCode = 15
+        versionName = "1.5"
 
         ndk {
             // The Ayn Thor is arm64. x86_64 is kept so the app also runs in the emulator.
@@ -75,6 +75,9 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    // Reading and writing song tags (Edit song info). LGPL-3.0.
+    implementation("net.jthink:jaudiotagger:3.0.1")
     val composeBom = platform("androidx.compose:compose-bom:2025.08.00")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
