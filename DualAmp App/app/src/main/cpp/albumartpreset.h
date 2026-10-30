@@ -100,6 +100,11 @@ struct Layer {
     std::string texture; // textureName() of the saved cover
     Palette palette;
     float weight = 1.f;
+    /// 0-3: the weight comes from host value hostSlot (the _hv0 uniform, needs
+    /// projectm_set_host_values from the fine band patch) every frame, so the
+    /// host can blend the covers smoothly without building a new preset.
+    /// -1: `weight` is fixed in the preset.
+    int hostSlot = -1;
 };
 
 /// A complete .milk preset. Up to four layers are used, the heaviest first.

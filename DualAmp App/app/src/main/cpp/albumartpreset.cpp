@@ -112,11 +112,25 @@ std::string sampleArt(const std::vector<Layer>& layers, const std::string& uv) {
             expression += " + ";
         }
         expression += "tex2D(sampler_fc_" + layers[i].texture + ", " + uv + ").xyz";
-        if (layers.size() > 1) {
+        if (layers[i].hostSlot >= 0) {
+            // Live weight from the host, normalized by hvn (see hostWeights()).
+            expression += std::string(" * _hv0.") + "xyzw"[layers[i].hostSlot & 3] + " * hvn";
+        } else if (layers.size() > 1) {
             expression += " * " + num(layers[i].weight);
         }
     }
     return expression + ")";
+}
+
+/// Shader line declaring hvn, which turns the host weights into shares adding
+/// up to 1, when any layer takes its weight from the host.
+std::string hostWeights(const std::vector<Layer>& layers) {
+    for (const Layer& layer : layers) {
+        if (layer.hostSlot >= 0) {
+            return "    float hvn = 1.0 / max(_hv0.x + _hv0.y + _hv0.z + _hv0.w, 0.0001);\n";
+        }
+    }
+    return std::string();
 }
 
 /// Shader lines declaring `name`: how loud the music is (around 1.0) at
@@ -517,6 +531,7 @@ std::string buildPreset(std::vector<Layer> layers, const Params& params) {
     warpShader << samplers
                << "shader_body\n"
                << "{\n"
+               << hostWeights(layers)
                << "    float2 d = float2(sin(uv.y * 9.0 + time * 1.7), cos(uv.x * 8.0 - time * 1.3));\n"
                // Melt: each height melts with its own band (bass at the bottom).
                << (params.style == Style::Melt
@@ -535,6 +550,7 @@ std::string buildPreset(std::vector<Layer> layers, const Params& params) {
     comp << samplers
          << "shader_body\n"
          << "{\n"
+         << hostWeights(layers)
          << "    float3 col = tex2D(sampler_main, uv).xyz * " << num(0.55 + 0.4 * trails) << ";\n"
          << "    col += GetBlur2(uv) * " << num(0.6 * background) << ";\n"
          << artMapping(params, "uv");
