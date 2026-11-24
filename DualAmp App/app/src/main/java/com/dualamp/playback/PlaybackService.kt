@@ -24,9 +24,14 @@ import com.google.common.util.concurrent.ListenableFuture
 @UnstableApi
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
+    private var deckPlayer: ExoPlayer? = null
+    private var mainFxRef: com.dualamp.mix.MixFx? = null
+    private var deckFxRef: com.dualamp.mix.MixFx? = null
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
+        val fx = com.dualamp.mix.MixFx().also { mainFxRef = it }
         val renderers = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
                 context: Context,
@@ -37,11 +42,14 @@ class PlaybackService : MediaSessionService() {
                 val sink = DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(enableFloatOutput)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                    .setAudioProcessors(arrayOf(DspProcessor()))
+                    .setAudioProcessors(arrayOf(fx, DspProcessor()))
                     .build()
-                return TapAudioSink(sink)
+                return TapAudioSink(com.dualamp.mix.MixClockSink(sink, fx))
             }
         }.setEnableDecoderFallback(true)
+            // Tempo changes (mix mode's beatmatching) are done by Android's own time-stretch, which follows small changes
+            // smoothly; ExoPlayer's would drain and restart the audio chain on each one (clicks, stutter).
+            .setEnableAudioTrackPlaybackParams(true)
 
         val player = ExoPlayer.Builder(this, renderers)
             .setAudioAttributes(
@@ -90,6 +98,27 @@ class PlaybackService : MediaSessionService() {
                 )
             })
             .build()
+        deckPlayer = buildDeck()
+        com.dualamp.mix.MixEngine.start()
+    }
+
+    /** The mixer's second player: song 2 during a transition (see [com.dualamp.mix.MixEngine]). */
+    private fun buildDeck(): ExoPlayer {
+        val fx = com.dualamp.mix.MixFx().also { deckFxRef = it }
+        val renderers = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink? =
+                com.dualamp.mix.MixClockSink(DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioProcessors(arrayOf(fx, DspProcessor()))
+                    .build(), fx)
+        }.setEnableDecoderFallback(true)
+            // Tempo changes (mix mode's beatmatching) are done by Android's own time-stretch, which follows small changes
+            // smoothly; ExoPlayer's would drain and restart the audio chain on each one (clicks, stutter).
+            .setEnableAudioTrackPlaybackParams(true)
+        return ExoPlayer.Builder(this, renderers)
+            .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), false)
+            .build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -103,6 +132,10 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        if (instance === this) instance = null
+        com.dualamp.mix.MixEngine.abort()
+        deckPlayer?.release()
+        deckPlayer = null
         ScreenAudioFocus.release()
         session?.run {
             player.release()
@@ -110,5 +143,77 @@ class PlaybackService : MediaSessionService() {
         }
         session = null
         super.onDestroy()
+    }
+
+    companion object {
+        @Volatile private var instance: PlaybackService? = null
+
+        /**
+         * DualAmp was quit: empty the player (so Android's media controls and the notification drop it; the queue is
+         * saved in Prefs and put back on the next start) and stop the service. Main thread.
+         */
+        fun quit() {
+            val s = instance ?: return
+            s.session?.player?.run { stop(); clearMediaItems() }
+            s.stopSelf()
+        }
+
+        /** The player itself (same process): for what a MediaController can't do, like the shuffle order. Main thread. */
+        val exo: ExoPlayer? get() = instance?.session?.player as? ExoPlayer
+
+        /** The mixer's second player and the effects on each player. */
+        val deck: ExoPlayer? get() = instance?.deckPlayer
+        val mainFx: com.dualamp.mix.MixFx? get() = instance?.mainFxRef
+        val deckFx: com.dualamp.mix.MixFx? get() = instance?.deckFxRef
+
+        /** Every queue position in the order it plays (follows shuffle). */
+        fun playOrder(p: androidx.media3.common.Player): List<Int> {
+            val t = p.currentTimeline
+            if (t.isEmpty) return emptyList()
+            val out = ArrayList<Int>(t.windowCount)
+            var i = t.getFirstWindowIndex(p.shuffleModeEnabled)
+            while (i != C.INDEX_UNSET && out.size < t.windowCount) {
+                out += i
+                i = t.getNextWindowIndex(i, androidx.media3.common.Player.REPEAT_MODE_OFF, p.shuffleModeEnabled)
+            }
+            return out
+        }
+
+        /**
+         * Puts [items] next in play order, shuffled or not: straight after the current song, or with [afterQueued] after
+         * the songs already queued there ([isQueued]). So Play next / Add to queue come before the rest of an album or
+         * playlist. Returns false when the player isn't there yet.
+         */
+        fun insertUpNext(items: List<MediaItem>, afterQueued: Boolean): Boolean {
+            val p = exo ?: return false
+            if (items.isEmpty()) return true
+            if (p.mediaItemCount == 0) return false
+            val order = playOrder(p)
+            var at = order.indexOf(p.currentMediaItemIndex).coerceAtLeast(0)
+            if (afterQueued) while (at + 1 < order.size && isQueued(p.getMediaItemAt(order[at + 1]))) at++
+            val listIndex = order[at] + 1
+            p.addMediaItems(listIndex, items)
+            if (p.shuffleModeEnabled) {
+                // The player shuffles new songs in anywhere: put them where they belong in the play order.
+                val newOrder = orderWithInserted(order, at, listIndex, items.size)
+                p.setShuffleOrder(androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder(newOrder.toIntArray(), System.nanoTime()))
+            }
+            return true
+        }
+
+        /** Reshuffles the whole queue (a shuffled playlist starting over). */
+        fun reshuffle() {
+            val p = exo ?: return
+            p.setShuffleOrder(androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder(p.mediaItemCount, System.nanoTime()))
+        }
+
+        const val EXTRA_FROM = "dualamp.from"
+        /** Added with Play next / Add to queue. */
+        const val FROM_QUEUE = "queue"
+        /** Added by Autoplay when the album, artist or songs ran out. */
+        const val FROM_AUTOPLAY = "autoplay"
+
+        fun fromOf(item: MediaItem): String? = item.mediaMetadata.extras?.getString(EXTRA_FROM)
+        fun isQueued(item: MediaItem) = fromOf(item) == FROM_QUEUE
     }
 }

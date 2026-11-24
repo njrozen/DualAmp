@@ -23,6 +23,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.focusable
 import androidx.compose.runtime.produceState
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -92,6 +93,41 @@ fun AlbumArt(
         } else {
             Placeholder(seed, Modifier.fillMaxSize())
         }
+    }
+}
+
+/**
+ * An artist's picture (yours, or found online: [com.dualamp.library.ArtistImages]), or [fallback] (usually one of
+ * their covers) without one. Showing it asks for a picture online when that's turned on.
+ */
+@Composable
+fun ArtistArt(name: String, modifier: Modifier = Modifier, shape: Shape = MaterialTheme.shapes.small, fallback: @Composable () -> Unit) {
+    val revision by com.dualamp.library.ArtistImages.revision.collectAsState()
+    val fetchOn by com.dualamp.settings.Prefs.fetchArtistArt.state.collectAsState()
+    LaunchedEffect(name, fetchOn) { com.dualamp.library.ArtistImages.want(name) }
+    val file = remember(name, revision, fetchOn) { com.dualamp.library.ArtistImages.file(name) }
+    if (file == null) { fallback(); return }
+    BoxWithConstraints(modifier.aspectRatio(1f).clip(shape)) {
+        val px = with(LocalDensity.current) { maxWidth.toPx().toInt().coerceAtLeast(64) }
+        val image by produceState<ImageBitmap?>(null, file, px) { value = com.dualamp.library.ArtistImages.load(file, px) }
+        val img = image
+        if (img != null) Image(img, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        else Placeholder(name, Modifier.fillMaxSize(), icon = Icons.Rounded.Person)
+    }
+}
+
+/** A playlist's own picture (Choose playlist picture), or [fallback] (its first song's cover) without one. */
+@Composable
+fun PlaylistArt(id: String, modifier: Modifier = Modifier, shape: Shape = MaterialTheme.shapes.small, fallback: @Composable () -> Unit) {
+    val revision by com.dualamp.library.ArtistImages.revision.collectAsState()
+    val file = remember(id, revision) { com.dualamp.library.ArtistImages.playlistPicture(id) }
+    if (file == null) { fallback(); return }
+    BoxWithConstraints(modifier.aspectRatio(1f).clip(shape)) {
+        val px = with(LocalDensity.current) { maxWidth.toPx().toInt().coerceAtLeast(64) }
+        val image by produceState<ImageBitmap?>(null, file, px, revision) { value = com.dualamp.library.ArtistImages.load(file, px) }
+        val img = image
+        if (img != null) Image(img, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        else Placeholder(id, Modifier.fillMaxSize())
     }
 }
 

@@ -10,7 +10,7 @@ A music player made with the **AYN Thor** and its two screens in mind. It works 
   Genres, Years, Folders, Queue), a sort menu, and three views: **List, Grid and Cover Flow**. Drill-down works like an
   iPod: Artist → their albums and singles → tracks. Long names scroll so you can read all of them.
 
-**Version 1.4** · made by njrozen and Claude.
+**Version 1.6** · made by njrozen and Claude.
 
 | Both screens: now playing on top, the library below (here in Cover Flow) |
 |:---:|
@@ -28,6 +28,35 @@ A music player made with the **AYN Thor** and its two screens in mind. It works 
 |:---:|
 | ![Timed lyrics over the visualizer on the top screen](screenshots/lyrics-top-screen.png) |
 
+**Mix mode (1.6):** DJ-style transitions between the songs of a playlist ([how it works](#mix-mode)).
+
+| Editing a transition: the waveforms on top (with the beat ruler between them), the settings below | A playlist in mix mode: tempo, key and the transitions |
+|:---:|:---:|
+| ![Mix editor on both screens: song 1 and song 2 waveforms on the top screen with the beat ruler between them, transition settings on the bottom](screenshots/mix-editor-both-screens.png) | ![A playlist in mix mode with each song's BPM and key and a transition between each pair](screenshots/mix-playlist.png) |
+
+**On one screen, held upright** (a phone, or the Thor's bottom screen alone): the waveforms above the settings, and,
+while customizing (here the filter: dots on its curve), bigger waveforms with only that setting below.
+
+![The mix editor on one screen in portrait: waveforms above the settings; customizing the filter makes the waveforms bigger with just the filter rows below](screenshots/mix-single-screen-portrait.png)
+
+| Mixed playlists carry the mixer symbol |
+|:---:|
+| ![The Playlists grid: Mix demo shows the mixer symbol and Mixed by you](screenshots/mix-mixed-playlists.png) |
+
+**Also new in 1.6:**
+
+| Settings in tabs | Add to several playlists at once |
+|:---:|:---:|
+| ![Settings with its tabs as chips at the top, on the Now playing tab](screenshots/settings-tabs.png) | ![Add to playlist with a tick box for each playlist and Add to 2 playlists at the top](screenshots/add-to-playlists.png) |
+
+| Search this playlist | Playlists: all, yours, or playlist files |
+|:---:|:---:|
+| ![Searching inside a playlist: only its artists, with how many of their songs it holds](screenshots/playlist-search.png) | ![The Playlists tab showing only playlist files](screenshots/playlists-showing.png) |
+
+| Select multiple in Cover Flow | Years by decade |
+|:---:|:---:|
+| ![Cover Flow with a selected artist: an accent ring and a tick](screenshots/cover-flow-select.png) | ![The Years tab grouped by decade, on the 2020s](screenshots/years-by-decade.png) |
+
 ## Screens, landscape and portrait
 
 - **Settings > Use both screens** chooses how DualAmp uses the Thor's screens:
@@ -42,6 +71,130 @@ A music player made with the **AYN Thor** and its two screens in mind. It works 
 - **Settings > Screen orientation:** Auto (follows how you hold the device), Landscape or Portrait (either way up).
   Both screens always turn together. In portrait the D-pad turns with the screen, so up on the D-pad is always up on
   screen.
+
+## What's new in 1.6
+
+### Mix mode
+
+- **Mix mode:** turn a playlist into a DJ mix. Each song shows its **tempo (BPM) and key** (Camelot code, e.g. 8A), and
+  between every two songs you set up a **transition**: where song 2 comes in, from where in song 2, for how many bars,
+  and how they blend (volume, EQ / bass swap, high- and low-pass filters, reverb / echo / delay, looping, each song's
+  lows / mids / highs). **Play the transition** hears it straight away; **Save** keeps it, so the playlist plays the
+  same mix every time. **Auto-mix** makes a transition for every pair of songs in one go. See [Mix mode](#mix-mode).
+- **Beatmatching** is on by default: song 2 plays at song 1's tempo, on its beat, then eases back to its own (or choose
+  **Ease into song 2's tempo**).
+- **Waveforms:** while you edit a transition, the two songs' waveforms (lows, mids, highs) show lined up as they will
+  play, with the volume, EQ, filter and effect moves and where the music is: on the top screen with both screens, above
+  the settings on one screen. Drag a waveform to slide that song: it snaps to beats, bars, or anywhere (**Snap to the
+  grid**).
+- **Beat ruler:** the space between the two waveforms shows both songs' beats, song 1's hanging from the top (blue) and
+  song 2's rising from the bottom (orange). Bar lines are thick, beat lines thin, and lines that meet turn green on both
+  (a bar on a bar brighter), so you can see at a glance whether the songs are on the beat.
+- **Customize** like Spotify's mix mode: every Volume, EQ, Filter and Effect choice can be drawn by hand as a curve of
+  dots on the waveform (tap the line to add a dot, drag it, tap it to remove it), with undo / redo. More choices too:
+  Spotify-style volume shapes (Overlap stops right at the end instead of fading), all nine filter in / out pairs, and
+  reverb, echo and delay effects that ring on after song 1 is gone.
+- **On one screen, held upright** (a phone, or the Thor's bottom screen alone): the waveforms sit above the settings,
+  with no tab bar or mini player, so the editor gets the whole screen. **Touch the waveforms** (or customize a curve)
+  and they grow to most of the screen, with only the settings that go with them below; **Show all settings** or B
+  brings back the rest. Side by side is used only on a clearly wide screen.
+- **Play button** for the transition on song 2's label row, so it never covers the waveforms or the dots you are
+  drawing. No mini player in the transition editor (one screen or two).
+- **Mixed playlists** show the mixer symbol and "Mixed by you". Mix mode can be turned off at any time to play the
+  playlist normally (shuffle too); its transitions are kept. **Move up / Move down** in a playlist song's menu sets the
+  order.
+- **Smoother mixes:** tempo changes during a transition use Android's own time-stretch, so beatmatching doesn't click
+  or stutter; the two songs leave headroom while they play together (no clipping), and analysing songs runs in the
+  background without taking time from playback.
+
+### Library and playlists
+
+- **Add to several playlists at once:** Add to playlist (and the top screen's song menu) shows a tick box for every
+  playlist and playlist file; tick the ones you want, then **Add to N playlists** at the top.
+- **Playlist files** (.m3u...; Settings > Music library > Music folders > Show playlist files) can be added to. In
+  .m3u files the songs go at the end, written like the lines already there (so a playlist made on your PC keeps
+  working there); Android asks once per file. Other formats (.pls, .wpl) are written by Android.
+- **Playlists tab: Showing** All playlists / Your playlists / Playlist files (the button at the top; only when there
+  are playlist files).
+- **Search this playlist** on a playlist's page: only its songs and artists come up; an artist opens their songs in
+  that playlist.
+- **Playlists sort by Album artist** by default, so an album with various artists stays together (then year, album,
+  disc and track). Track order (the playlist's own) and the other sorts are still in the sort menu.
+- **Playlist pictures:** Y (or long-press) on a playlist > **Choose playlist picture** for your own photo; **Remove
+  playlist picture** goes back to the first song's cover.
+- **Artist pictures:** Settings > Artists > **Fetch artist pictures** (off until you turn it on; the first launch asks)
+  finds a photo of each artist online on Wi-Fi. Or choose your own: Y on an artist > **Choose artist picture**, or
+  **Artist picture** on the artist's page. Without either, artists show one of their covers. See
+  [Artist pictures](#artist-pictures).
+- **Years by decade:** the Years tab can group the years into decades (**Group by decade** / **Show every year** at
+  the top); each decade opens to its years, with Shuffle and All songs.
+- **Select multiple in Cover Flow:** picked covers get an accent ring and a tick (and a tick by the name).
+- **Remove lyrics from the song:** in a song's menu, next to Delete .lrc file: takes out the lyrics stored in the
+  song's own tags (asks first).
+
+### Now playing on the bottom screen
+
+- **Bigger now-playing view** (tap the mini player): no artwork in the way, so the buttons have room; they shrink to
+  fit (portrait with the lyrics) and both rows line up. **Tap the title** for the song's menu (go to artist / album,
+  edit song info...); the gamepad works in that menu too.
+- Settings > Now playing > Bottom screen: **Mini player** (on or off, with both screens), **Waveform progress bar**
+  (the song's waveform, like the top screen's), **Album art background** (the cover behind the view, with **Album art
+  blur** and **Background behind the buttons**).
+
+### Settings
+
+- **Settings in tabs:** Music library, Artists, Library view, Theme, Screens, Now playing (top and bottom screen),
+  Lyrics, Visualizer, Album art visualizer, Help & controls and About, as chips at the top of Settings. Tap one, or
+  press up from the first setting and then left / right. Settings opens on the tab you used last.
+
+### Fixes
+
+- Big playlist files that list a song more than once no longer crash DualAmp when opened.
+- In menus opened by touch (e.g. tapping the song in the bottom player), the D-pad now shows its highlight straight
+  away.
+- Pressing up from the first setting of a page reaches the tabs / header even when a section title is above it.
+
+## What's new in 1.5.4
+
+- **Now playing on the bottom screen:** tap the song in the player bar for a bigger player: a big progress bar,
+  big previous / next, back and forward 10 seconds, play / pause, like, add to playlist, shuffle, repeat and queue
+  buttons, and the **lyrics**, which then leave the top screen and show here. Back arrow, B or Back returns to the
+  library.
+
+## What's new in 1.5.3
+
+- **Delete .lrc file (wrong lyrics):** in a song's menu (Y or long-press, Hold Y for the song playing, or the cover
+  menu on the player) when the song has a `.lrc` file next to it, and in Edit song info (for several songs too). For
+  `.lrc` files holding another song's lyrics. DualAmp asks first; Android may ask too, or once for the song's folder.
+- **Hide artists** from the Artists tab: Y (or long-press) on an artist > Hide from Artists, e.g. someone featured on
+  one song. Their songs stay where they are; Settings > Artists > Hidden artists brings them back.
+- **Uninterrupted visualizer** now also stays clear when you skip songs with L1 / R1. **Show the new song** (on by
+  default) puts the song's title and album (just the title for a single), with its artists below, top left for a
+  moment instead.
+- **Fixes:** in Cover Flow, going up to Shuffle (or the other buttons) and back down returns to the cover you were on;
+  in the single-screen tabs layout, Go to album / Go to artist from the big player's cover menu closes the big player
+  and opens the page.
+
+## What's new in 1.5.2
+
+- **Autoplay:** when an album, artist or list of songs ends, similar songs keep playing (on the Queue tab, or
+  Settings > Queue).
+- **Playlists start over** when they end; a shuffled playlist keeps going in a new random order.
+- **Play next / Add to queue** now come before the rest of the album or playlist playing, shuffle on or off.
+- **Artists tab: album artists only** (Settings > Artists): featured artists leave the Artists tab but still
+  come up in search, with their page and songs.
+- **Edit several songs at once:** a whole album (Edit album info), an artist or playlist, or songs picked with Select
+  multiple. Fields the songs don't share show "Various" and stay as they are unless you change them.
+- **Edit song info** also edits the **comment** and can **remove the lyrics stored in songs** (not `.lrc` files).
+
+## What's new in 1.5.1
+
+- **Uninterrupted visualizer** (Settings > Now playing, top screen): the song info no longer comes back over the
+  visualizer when the next song starts. It still shows when you pause, tap or press a button.
+- **Genres:** a song tagged with several genres ("Rock; Punk" or "Rock, Punk") is listed under Rock and under Punk,
+  instead of under a "Rock; Punk" genre of its own.
+- **Fix:** closing DualAmp now takes it out of Android's media controls, and closing the Thor's lid afterwards lets
+  the screen turn off as usual.
 
 ## What's new in 1.5
 
@@ -105,12 +258,12 @@ A music player made with the **AYN Thor** and its two screens in mind. It works 
 
 ## Installing
 
-Download from the [latest release](https://github.com/njrozen/DualAmp/releases/latest): **DualAmp-1.4.apk** (the app) and,
+Download from the [latest release](https://github.com/njrozen/DualAmp/releases/latest): **DualAmp-1.6.apk** (the app) and,
 optionally, **DualAmp-Server.exe** (for playing your PC's music) and **DualAmp-Mp3tag-actions.zip** (for tidying
 artist tags, see [Multiple artists](#multiple-artists)).
 
-1. Copy `DualAmp-1.4.apk` to the Thor (or any Android 11+ device) and open it (allow installing from your file manager when asked), or from a PC:
-   `adb install DualAmp-1.4.apk`. It installs over earlier versions and keeps your settings and playlists.
+1. Copy `DualAmp-1.6.apk` to the Thor (or any Android 11+ device) and open it (allow installing from your file manager when asked), or from a PC:
+   `adb install DualAmp-1.6.apk`. It installs over earlier versions and keeps your settings and playlists.
 2. Start DualAmp. It asks for your music folder, offers the shoulder-button permission, then shows the help guide
    (Settings > Help opens it again).
 3. Optional, for the lid-closed buttons: Settings > Lid-closed buttons, and turn on DualAmp under
@@ -190,10 +343,15 @@ remove). Playlist files (.m3u) inside those folders are hidden unless you turn t
 
 **Albums vs Singles:** a single is a song alone on a release of the same name ("Cartier" on "Cartier"). A lone song from a bigger album still counts as an album.
 
-**When the queue runs out:** after a song list, search result or single song, a random library song plays next.
-Albums and playlists just end. Next (R1 or the button) always keeps going with a random song. The Queue tab shows only
-what is up next (the playing song is the header). Holding L3 or "Clear
-queue" on the Queue tab removes everything else but keeps the current song playing (it asks first).
+**When the queue runs out:** a playlist starts over (reshuffled when shuffle is on, so a shuffled playlist never
+stops). After an album, artist, song list or single song, **Autoplay** keeps going with similar songs (sharing
+genres, artists and era with what just played), lined up a song ahead so there's no gap. Turn it off on the Queue tab
+or in Settings > Queue, and the music stops at the end. Next (R1 or the button) at the end always keeps going.
+
+**Play next / Add to queue** come before the rest of the album or playlist playing, shuffled or not: Play next goes
+straight after the current song, Add to queue after the songs you queued before. The Queue tab shows only what is up
+next (the playing song is the header). Holding L3 or "Clear queue" on the Queue tab removes everything else but keeps
+the current song playing (it asks first).
 
 **Top-screen visualizer menus:** the folder button picks what the visualizer cycles through: all presets, a
 visualizer type (Dancer, Drawing, Geometric, ...) or one of your folders. Tap the preset name to add it to a folder.
@@ -225,7 +383,13 @@ Settings are tabs of their own: opening them never replaces what the Library, PC
 pressing the button again (or B) goes back. Tap the DualAmp logo for About (version, device, credits).
 Settings are grouped: Library, Screens, Now playing, Visualizer, Help & controls, About.
 
-**Bottom-screen player bar:** add to playlist, previous, play/pause, next. Tap the song to open the queue.
+**Bottom-screen player bar:** add to playlist, previous, play/pause, next. Tap the song for the bottom screen's **now-playing
+view**: the title, a big progress bar (drag to seek), previous, back / forward 10 s, play / pause, next, like, add to playlist,
+shuffle, repeat, lyrics and the queue. With lyrics on there, they leave the top screen (just the visualizer) and come
+back to it when you close the view (back arrow, B or Back). D-pad moves along the buttons, A presses, Y is the song's menu.
+Tap the title (or artist) for the same menu. Settings > Now playing > **Album art background** shows the
+song's cover, blurred, behind the view; **Background behind the buttons** sets how dark the panels under the text,
+progress bar, buttons and lyrics are (like Song info background on the top screen).
 
 **Queue:** Y / long-press any song, album or playlist > Play next / Add to queue. On the Queue page, Y on a song
 gives Play now, Play next (move up) and Remove from queue.
@@ -357,6 +521,18 @@ Run `server/build.cmd`: it compiles `DualAmp Server.exe` with the C# compiler th
   tiny display named "DualAmp virtual external (lid buttons)" that SleepManager counts as a dock (nothing is shown on it); it goes away when
   the lid opens. SleepManager's JamesDSP option turns JamesDSP off with the lid shut, which makes the music quieter; turn it off to avoid that.
 
+## Artist pictures
+
+Artists (the Artists tab and each artist's page) can show a picture of the artist instead of one of their covers:
+
+- **Fetch artist pictures** (Settings > Artist pictures; off until you turn it on, and the first launch asks): while the
+  Thor is on Wi-Fi, DualAmp looks each artist up on Deezer as they come into view (only the artist's name is sent) and
+  keeps the photo. Artists it can't find show a cover; they are tried again after two weeks, or when you turn the option
+  back on. Turning it off goes back to covers.
+- **Your own picture:** Y (or long-press) on an artist > **Choose artist picture**, or **Artist picture** on the
+  artist's page, and pick one from your photos. It always wins over the one found online. **Remove your artist picture**
+  in the same menu goes back.
+
 ## Lyrics
 
 A small cloud next to the lyrics button means the lyrics came from the internet (lrclib.net), not from a `.lrc` file or the song's tags.
@@ -379,9 +555,88 @@ first scan after updating takes a little longer. Songs from DualAmp Server on a 
 ## Edit song info
 
 Open a song's menu (press Y, or long-press it) and choose **Edit song info** to change its title, artist, album artist, album,
-release date, genre, track number and disc number, or its cover art (pick an image from your files or photos). Nothing is written
-until you choose **Save**; Android may then ask once to let DualAmp change that file. The library reloads with the new info.
-Settings > Edit song info (under Music library) takes the option out of the menu. Songs from DualAmp Server can't be edited.
+release date, genre, track number, disc number and comment, or its cover art (pick an image from your files or photos).
+**Remove lyrics in the song** takes out lyrics stored in the file's tags; `.lrc` files are left alone. **Delete .lrc file**
+(also in the song's menu when it has one) deletes the lyrics file next to the song right away (it asks first), for one with another song's lyrics. Nothing else is written
+until you choose **Save**; Android may then ask once to let DualAmp change the files. The library reloads with the new info.
+
+**Several songs at once:** **Edit album info** at the bottom of an album, **Edit info of N songs** in the menu of an album,
+artist or playlist, or pick songs with **Select multiple** and choose Edit. A field the songs share shows its value; one they
+don't shows "Various". Only the fields you change are written, to every song, so you can fix the album artist of a whole
+album in one go. Title and track number stay each song's own.
+
+Settings > Edit song info (under Music library) takes the options out of the menus. Songs from DualAmp Server can't be edited.
+
+## Mix mode
+
+A way to try out song transitions on the go: a playlist becomes a DJ mix, played in order with a transition between
+each pair of songs, like Spotify's mixed playlists.
+
+**Turning it on.** Open one of your playlists and set **Mix mode** to On. The playlist then plays in order (no shuffle)
+and each song shows its **tempo (BPM)** and **key** (Camelot code: 8A, 9B…; neighbours on the wheel mix well).
+DualAmp reads each song once in the background to find them (a few seconds a song, kept afterwards). Between every two
+songs there is a row: **Add a transition**, or the transition already there (e.g. *Transition: Crossfade · 8 bars*).
+**Auto-mix the playlist** makes one for every pair at once; **Play mix** plays it. Turn Mix mode off to play the
+playlist normally (shuffle too); the transitions are kept for when you turn it back on. A playlist with transitions
+shows the mixer symbol and *Mixed by you* in your playlists. Device playlists (from Android) can't be mixed.
+
+**Editing a transition** (A on its row). At the top: the two songs, their tempo and key, and how well they match
+(e.g. *141 → 140 BPM (-1%) · 6B → 9B: keys may clash*).
+
+| Setting | What it does |
+|:---|:---|
+| **Play the transition** | Plays the playlist as a mix from 8 seconds before song 2 comes in, with the transition as it is now (saved or not). Change things while it plays and hear them right away. |
+| **Style** | Ready-made transitions: Auto, Smooth, Bass swap, Rise, Fade, Echo out, Quick cut. Changing anything else makes it *Custom*. |
+| **Length** | How long the two songs play together, in bars of song 1 (1 to 32; 4 beats a bar), or seconds when the tempo isn't known. |
+| **Snap to the grid** | What moving a song lands on: **Beats** (every beat line, the default), **Bars** (only the first beat of each bar, the brighter lines, so the two songs' bars and phrases start together) or **Off** (anywhere, in 10 ms steps). Applies to left / right and to dragging the waveforms. |
+| **Song 2 comes in at** | Where in song 1 the transition starts. Left / right moves it a beat (or a bar, or 10 ms, going by Snap). |
+| **Song 2 starts from** | Where in song 2 it comes in from. Left / right moves it a beat (or a bar, or 10 ms). |
+| **Volume** | Smooth crossfade, Overlap (both at full volume; song 1 stops right at the end, no fade), Fade in fade out, Cut in fade out, Fade in cut out, Cut, or **Custom** (drawn by you). |
+| **EQ** | Bass swap (the two songs' bass changes over halfway, so the low end never doubles up), Start / End bass swap, Bass and mid swap, EQ blend (lows, mids and highs hand over gradually), None, or **Custom** (lows, mids and highs drawn by you). |
+| **Filter** | High / low pass filter out (song 1 thins out or gets muffled over the second half), High / low pass filter in (song 2 opens up over the first half), every pair of them (e.g. *Low pass filter in high pass filter out*), None, or **Custom**. |
+| **Effects** | Reverb, Echo (repeats that get darker) or Delay (plain repeats) every ½, ¾ or 1 beat. Song 1 goes into the effect over the second half and either fades into it (*out end*) or stops right at the end (*cut end*); *Reverb out center* is gone by halfway. The effect rings on after song 1 is gone, before song 2 carries on alone. How much goes in can be drawn too. |
+| **Customize on the waveform** | Shows one setting's curves (Volume, Lows, Mids, Highs, Filter or Effect) with dots on the waveform. **Tap the line** to add a dot, **drag** a dot to move it (it snaps to the beat lines, going by Snap to the grid), **tap a dot** to remove it; the end dots only move up and down. Changing a curve makes that setting *Custom*. Picking **Custom** in a setting's list does the same. |
+| **Undo / Redo** | Take back or put back changes (also the arrows above the waveform while customizing). |
+| **Looping** | Song 1 repeats the first 1, 2 or 4 bars of the transition instead of playing on (e.g. to stay in a beat before its outro). |
+| **Beatmatching** | On by default (whenever both songs' tempos are known): song 2 plays on song 1's beat. **Tempo:** *Song 2 matches song 1* (the default: song 2 plays at song 1's tempo, then eases back to its own after the transition) or *Ease into song 2's tempo* (song 2 starts at song 1's tempo and both ease to song 2's own by the end). Songs twice or half as fast are matched every other beat. |
+| **Song 1 EQ / Song 2 EQ** | Lows, mids and highs for each song during the transition (-24 dB to +6 dB; all the way left: Off). |
+| **Save transition** | Keeps it in the playlist; it plays every time the playlist plays as a mix. Leaving without saving keeps the old one. **Remove transition** goes back to one song simply following the other. |
+
+**The waveforms.** With both screens the top screen shows song 1's waveform above song 2's (blue lows, orange mids,
+cream highs), lined up as they will play (song 2 at song 1's tempo when beatmatched), with the beat lines (each bar's
+first beat brighter, the three beats between it fainter), the
+transition's window, the volume (blue), bass (yellow), filter (pink) and effect (grey) curves, and a green line where the music
+is. The play button on song 2's label row plays the transition (or stops it). For the filter, the middle is no filter,
+up is a high pass and down a low pass.
+**The beat ruler** between the two waveforms shows both songs' beats meeting in the middle: song 1's hang from the top
+(blue), song 2's rise from the bottom (orange); bar lines thick, beat lines thin. Where a line has one of the other song's
+lines at the same spot, both turn green (a bar on a bar brighter): green all through the window means the songs are on
+the beat. Each song's lines are dimmer where it isn't heard.
+**Drag** a song's waveform sideways to slide it under the window; it jumps from beat line to beat line as you drag (or
+bar to bar, or moves freely, going by **Snap to the grid**).
+
+**On one screen** the waveforms sit above the settings (side by side only when the screen is clearly wide), the tab bar
+and mini player make way so the editor fills the screen, and the settings page leaves out the songs' cover and titles
+(the waveforms show them). **Touching the waveforms** makes them bigger (most of the screen) with only Snap and the two
+meeting points below; **customizing a curve** does the same with just that setting and Customize below. **Show all
+settings** (or B) brings back the full list and the smaller waveforms.
+
+**Controller.** The D-pad moves through the settings, left / right moves a slider (a beat or a bar for the meeting points),
+A opens a list or presses a button, B goes back. In a playlist, Y on a song has **Move up / Move down**: in a mix the
+order of the songs makes the transitions (a transition belongs to its two songs, so moving a song away leaves it unused
+until they are next to each other again).
+
+**How it plays.** While song 1 plays, DualAmp starts song 2 on a second player, keeps it on song 1's beat (nudging its
+speed by a fraction) and applies the volume, EQ, filter, echo and loop to each song as the transition goes. When song 1
+is gone, the main player takes over song 2 at exactly the same spot, so the queue, lyrics, notification and visualizer
+simply move on to song 2. Skipping during a transition stops it; seeking into one picks it up from there.
+
+**The beat grid.** DualAmp puts the beat lines on the kick drums (so hats and bass between the beats in techno
+and house don't pull the grid off), checks that the tempo isn't read as 2/3 or 3/4 of the real one, and finds which beat
+starts the bars from where new parts of the song come in.
+
+**Limits.** Tempo and key are worked out from the audio and can be off for songs without a steady beat (they then show
+"?" and transitions are timed in seconds). The visualizer follows song 1 until the transition ends.
 
 ## Single-screen tabs layout
 
@@ -395,7 +650,7 @@ song. **Side by side** (the default) keeps the player and the library both on sc
 
 Songs with more than one artist in their artist tag ("Kanye West, JAY-Z", "Drake feat. Rihanna") or a feature in the title
 ("Flashing Lights (feat. Dwele)") are listed under each artist: a release goes under each of its album artists, and every credited artist
-gets the song, with other artists' releases they are on under **Appears on** on their page. Settings > Multiple artists:
+gets the song, with other artists' releases they are on under **Appears on** on their page. Settings > Artists:
 
 - **Artist separators:** the text between two names (spaces count: " x " is not "x"). Defaults: `, ` `; ` ` & ` ` feat. ` ` feat ` ` ft. `
   ` featuring ` ` with ` ` x ` ` / `.

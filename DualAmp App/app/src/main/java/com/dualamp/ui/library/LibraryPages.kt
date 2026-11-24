@@ -1,7 +1,9 @@
 package com.dualamp.ui.library
 
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.AllInclusive
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Search
@@ -18,6 +20,7 @@ import androidx.compose.material.icons.rounded.ClearAll
 import androidx.compose.material.icons.rounded.LibraryAdd
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
@@ -26,6 +29,9 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.dualamp.library.Album
 import com.dualamp.library.Artist
@@ -62,7 +68,7 @@ enum class Category(val label: String) {
 enum class ViewMode { LIST, GRID, COVERFLOW }
 
 enum class Sort(val label: String) {
-    NAME("Name"), ARTIST("Artist"), ALBUM("Album"), YEAR("Release year"), ADDED("Recently added"),
+    NAME("Name"), ARTIST("Artist"), ALBUM_ARTIST("Album artist"), ALBUM("Album"), YEAR("Release year"), ADDED("Recently added"),
     DURATION("Length"), COUNT("Most songs"), ORDER("Track order"),
 }
 
@@ -76,16 +82,23 @@ sealed interface Page {
     data class SongsOf(val title: String, val kind: String, val key: String) : Page
     data class GenrePage(val name: String) : Page
     data class YearPage(val year: Int) : Page
+    /** The years of a decade (Years tab, Show: Decades); 1990 for the 1990s. */
+    data class DecadePage(val decade: Int) : Page
     data class PlaylistPage(val id: String) : Page
     data class FolderPage(val path: String) : Page
-    data class Search(val query: String) : Page
+    /** Search: the whole library, or only one playlist's songs and artists ([playlistId]). */
+    data class Search(val query: String, val playlistId: String? = null) : Page
     data object Settings : Page
     data object Presets : Page
     data object MusicFolders : Page
     /** Settings > Multiple artists: the separators ([keep] false) or the names never split ([keep] true). */
     data class ArtistSplitList(val keep: Boolean) : Page
-    /** Edit song info ([com.dualamp.library.TagEditor]) for one song. */
+    /** Settings > Multiple artists > Hidden artists ([com.dualamp.library.HiddenArtists]). */
+    data object HiddenArtistList : Page
+    /** Edit song info ([com.dualamp.library.TagEditor]) for one song or several (the first one's id). */
     data class EditSong(val songId: Long) : Page
+    /** Mix editor: the transition from song [fromId] into [toId] in a playlist ([com.dualamp.mix.MixEditor]). */
+    data class MixEdit(val playlistId: String, val fromId: Long, val toId: Long) : Page
     data object Dsp : Page
     data object PcMusic : Page
     data object Controls : Page
@@ -102,6 +115,7 @@ sealed interface Page {
             is SongsOf -> "songs_of"
             is GenrePage -> "genre"
             is YearPage -> "year"
+            is DecadePage -> "decade"
             is PlaylistPage -> "playlist"
             is FolderPage -> "folder"
             is Search -> "search"
@@ -109,7 +123,9 @@ sealed interface Page {
             Presets -> "presets"
             MusicFolders -> "music_folders"
             is ArtistSplitList -> "artist_split"
+            HiddenArtistList -> "hidden_artists"
             is EditSong -> "edit_song"
+            is MixEdit -> "mix_edit"
             Dsp -> "dsp"
             PcMusic -> "pc_music"
             Controls -> "controls"
@@ -122,6 +138,10 @@ sealed interface Art {
     data class Cover(val albumId: Long, val songId: Long) : Art
     data class Symbol(val icon: ImageVector, val seed: String) : Art
     data class TrackNo(val number: Int) : Art
+    /** An artist: their picture (yours, or found online), else [fallback] (one of their covers). */
+    data class Artist(val name: String, val fallback: Art) : Art
+    /** A playlist: your picture for it (Choose playlist picture), or [fallback]. */
+    data class Playlist(val id: String, val fallback: Art) : Art
     data object None : Art
 }
 
@@ -209,7 +229,16 @@ class UiActions(
     val askText: (String, String, String, (String) -> Unit) -> Unit,
     /** Edit song info: pick a new cover from files or photos / write the changes into the song's file. */
     val pickCover: () -> Unit,
+    /** Your own picture for the named artist (from your photos). */
+    val pickArtistPicture: (String) -> Unit = {},
     val saveTags: () -> Unit,
+    /** Opens the editor for these songs (an album's Edit album info). */
+    val editSongs: (List<Song>) -> Unit,
+    /** Deletes these songs' .lrc files (after asking). */
+    val deleteLrc: (List<Song>) -> Unit,
+    /** Asks a yes/no question ([0]), with [1] on the yes button, then runs the action. */
+    val confirm: (String, String, () -> Unit) -> Unit = { _, _, run -> run() },
+    val toast: (String) -> Unit = {},
 )
 
 // ---------------------------------------------------------------------------------------------
@@ -241,7 +270,7 @@ fun artistEntry(a: Artist) = Entry(
     // Only featured on others' songs (Settings > Multiple artists): say so, and show one of those covers.
     subtitle = if (a.albums.isEmpty() && a.appearsOn.isNotEmpty()) "Featured on ${plural(a.songs.size, "song")}"
         else "${plural(a.albums.size, "album")} · ${plural(a.songs.size, "song")}",
-    art = (a.albums.firstOrNull() ?: a.appearsOn.firstOrNull())?.let { Art.Cover(it.id, it.coverSongId) } ?: Art.Symbol(Icons.Rounded.Person, a.name),
+    art = Art.Artist(a.name, (a.albums.firstOrNull() ?: a.appearsOn.firstOrNull())?.let { Art.Cover(it.id, it.coverSongId) } ?: Art.Symbol(Icons.Rounded.Person, a.name)),
     kind = Kind.CONTAINER,
     round = true,
     target = Page.ArtistPage(a.name),
@@ -268,6 +297,27 @@ fun yearEntry(y: YearGroup) = Entry(
     songs = { y.songs },
 )
 
+/** The years of one decade (Years tab, Show: Decades): 1990 for the 1990s. */
+class Decade(val decade: Int, val years: List<YearGroup>) {
+    val albums: List<Album> get() = years.flatMap { it.albums }
+    val songs: List<Song> get() = years.flatMap { it.songs }
+    val name: String get() = "${decade}s"
+}
+
+fun decades(years: List<YearGroup>): List<Decade> =
+    years.groupBy { it.year / 10 * 10 }.map { (d, ys) -> Decade(d, ys.sortedByDescending { it.year }) }
+
+fun decadeEntry(d: Decade) = Entry(
+    key = "decade:${d.decade}",
+    title = d.name,
+    subtitle = "${plural(d.years.size, "year")} · ${plural(d.albums.size, "album")} · ${plural(d.songs.size, "song")}",
+    art = d.years.firstNotNullOfOrNull { it.albums.firstOrNull() }?.let { Art.Cover(it.id, it.coverSongId) }
+        ?: Art.Symbol(Icons.Rounded.CalendarMonth, d.name),
+    kind = Kind.CONTAINER,
+    target = Page.DecadePage(d.decade),
+    songs = { d.songs },
+)
+
 fun folderEntry(f: Folder) = Entry(
     key = "folder:${f.path}",
     title = f.name,
@@ -281,18 +331,23 @@ fun folderEntry(f: Folder) = Entry(
     songs = { f.allSongs },
 )
 
+/** A playlist's picture: yours (Choose playlist picture), or its first song's cover (Liked Songs: the heart). */
+internal fun playlistArt(p: Playlist, first: Song?): Art = Art.Playlist(p.id, when {
+    p.id == PlaylistStore.LIKED_ID -> Art.Symbol(Icons.Rounded.Favorite, "liked-songs")
+    first != null -> Art.Cover(first.albumId, first.id)
+    else -> Art.Symbol(Icons.Rounded.QueueMusic, p.id)
+})
+
 fun playlistEntry(p: Playlist, lib: Library): Entry {
     val songs = p.songIds.mapNotNull { lib.songById[it] }
     val first = songs.firstOrNull()
     return Entry(
         key = "playlist:${p.id}",
         title = p.name,
-        subtitle = (if (p.readOnly) "Device playlist" else "Playlist") + " · " + plural(songs.size, "song"),
-        art = when {
-            p.id == PlaylistStore.LIKED_ID -> Art.Symbol(Icons.Rounded.Favorite, "liked-songs")
-            first != null -> Art.Cover(first.albumId, first.id)
-            else -> Art.Symbol(Icons.Rounded.QueueMusic, p.id)
-        },
+        subtitle = (if (p.readOnly) "Device playlist" else if (p.isMixed) "Mixed by you" else "Playlist") + " · " + plural(songs.size, "song"),
+        // Mixed playlists (with transitions) carry the mixer symbol.
+        badge = if (p.isMixed) Icons.Rounded.Tune else null,
+        art = playlistArt(p, first),
         kind = Kind.CONTAINER,
         target = Page.PlaylistPage(p.id),
         songs = { p.songIds.mapNotNull { lib.songById[it] } },
@@ -300,16 +355,16 @@ fun playlistEntry(p: Playlist, lib: Library): Entry {
     )
 }
 
-private fun actionEntry(key: String, title: String, icon: ImageVector, subtitle: String = "", action: () -> Unit) =
+internal fun actionEntry(key: String, title: String, icon: ImageVector, subtitle: String = "", action: () -> Unit) =
     Entry(key, title, subtitle, Art.Symbol(icon, key), Kind.ACTION, action = action)
 
-private fun playActions(songs: List<Song>, shuffleOnly: Boolean = false, collection: Boolean = false): List<Entry> {
+private fun playActions(songs: List<Song>, shuffleOnly: Boolean = false, playlist: Boolean = false): List<Entry> {
     if (songs.isEmpty()) return emptyList()
     val shuffle = actionEntry("act:shuffle", "Shuffle", Icons.Rounded.Shuffle, plural(songs.size, "song")) {
-        PlayerConnection.playSongs(songs, shuffle = true, fromCollection = collection)
+        PlayerConnection.playSongs(songs, shuffle = true, playlist = playlist)
     }
     if (shuffleOnly) return listOf(shuffle)
-    return listOf(actionEntry("act:play", "Play", Icons.Rounded.PlayArrow) { PlayerConnection.playSongs(songs, fromCollection = collection) }, shuffle)
+    return listOf(actionEntry("act:play", "Play", Icons.Rounded.PlayArrow) { PlayerConnection.playSongs(songs, playlist = playlist) }, shuffle)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -320,6 +375,8 @@ private fun <T> List<T>.sortedBy(desc: Boolean, cmp: Comparator<T>) = sortedWith
 private fun sortSongs(list: List<Song>, sort: Sort, desc: Boolean): List<Song> = when (sort) {
     Sort.NAME -> list.sortedBy(desc, compareBy { it.title.lowercase() })
     Sort.ARTIST -> list.sortedBy(desc, compareBy({ sortKey(it.artist) }, { it.album.lowercase() }, { it.disc }, { it.track }))
+    // By album artist (the song's own artist without one): an album with various artists stays together.
+    Sort.ALBUM_ARTIST -> list.sortedBy(desc, compareBy({ sortKey(it.albumArtist.ifBlank { it.artist }) }, { it.year }, { it.album.lowercase() }, { it.disc }, { it.track }))
     Sort.ALBUM -> list.sortedBy(desc, compareBy({ it.album.lowercase() }, { it.disc }, { it.track }))
     Sort.YEAR -> list.sortedBy(desc, compareBy({ it.year }, { it.album.lowercase() }, { it.disc }, { it.track }))
     Sort.ADDED -> list.sortedBy(!desc, compareBy { it.dateAdded })
@@ -360,11 +417,16 @@ fun buildPage(
                     listOfNotNull(a.year.takeIf { it > 0 }?.toString(), a.genre.ifBlank { null },
                         plural(a.songs.size, "song"), formatDurationLong(a.durationMs)).joinToString(" · "),
                     Art.Cover(a.id, a.coverSongId)),
-                entries = playActions(a.songs, collection = true) + a.songs.map {
+                entries = playActions(a.songs) + a.songs.map {
                     songEntry(it, trackNo = true, showAlbum = false).let { e ->
                         if (multiDisc) e.copy(subtitle = "Disc ${it.disc} · ${it.artist}") else e
                     }
-                },
+                } + listOfNotNull(
+                    // Settings > Edit song info: the whole album at once (album artist, album, date, genre, cover...).
+                    if (!com.dualamp.settings.Prefs.editTags.value || !a.songs.any(com.dualamp.library.TagEditor::canEdit)) null
+                    else actionEntry("act:editalbum", "Edit album info", Icons.Rounded.Edit,
+                        "All ${plural(a.songs.size, "song")}: artist, album artist, album, date, genre, comment, cover art") { actions.editSongs(a.songs) },
+                ),
                 playable = a.songs,
             )
         }
@@ -377,7 +439,7 @@ fun buildPage(
             // Comment tag says leak / unreleased (Settings > Leaks & unreleased): their own section, kept out of the rest.
             val (leakAlbums, leakSingles) = artistReleases(a, leaks = true)
             val leakCount = leakAlbums.size + leakSingles.size
-            val heroArt = (a.albums.firstOrNull() ?: a.appearsOn.firstOrNull())?.let { Art.Cover(it.id, it.coverSongId) } ?: Art.Symbol(Icons.Rounded.Person, a.name)
+            val heroArt = Art.Artist(a.name, (a.albums.firstOrNull() ?: a.appearsOn.firstOrNull())?.let { Art.Cover(it.id, it.coverSongId) } ?: Art.Symbol(Icons.Rounded.Person, a.name))
             fun group(kind: String, title: String, list: List<Album>) =
                 Entry("rel:$kind:${a.name}", title, plural(list.size, "release"), Art.Symbol(Icons.Rounded.Album, "$kind${a.name}"),
                     Kind.CONTAINER, target = Page.ArtistReleases(a.name, kind), songs = { list.flatMap { it.songs } }, wide = true)
@@ -396,6 +458,8 @@ fun buildPage(
                         group("leaks", "Unreleased & leaks", leakAlbums + leakSingles).takeIf { leakCount > 0 },
                         // Other artists' releases with songs this artist is on (Settings > Multiple artists).
                         group("appears", "Appears on", a.appearsOn).takeIf { a.appearsOn.isNotEmpty() },
+                        actionEntry("act:artistpic", "Artist picture", Icons.Rounded.Image,
+                            "Choose your own picture of ${a.name} (Y on the artist removes it)") { actions.pickArtistPicture(a.name) }.copy(wide = true),
                     ) +
                     // All releases inline: albums newest first, then singles newest first, then what they appear on.
                     albums.map { releaseEntry(it, "Album") } + singles.map { releaseEntry(it, "Single") } +
@@ -432,6 +496,12 @@ fun buildPage(
             "artist" -> lib.artist(page.key)?.songs
             "genre" -> lib.genreByName[page.key]?.songs
             "year" -> lib.yearByValue[page.key.toIntOrNull()]?.songs
+            "decade" -> page.key.toIntOrNull()?.let { d -> decades(lib.years).firstOrNull { it.decade == d }?.songs }
+            // An artist's songs in one playlist (from searching that playlist): "<playlist id>\u0000<artist>".
+            "plartist" -> page.key.split('\u0000', limit = 2).takeIf { it.size == 2 }?.let { (id, name) ->
+                (playlists + lib.devicePlaylists).firstOrNull { it.id == id }?.songIds?.mapNotNull { lib.songById[it] }
+                    ?.filter { s -> artistsOf(s).any { com.dualamp.library.artistKey(it) == com.dualamp.library.artistKey(name) } }
+            }
             else -> null
         }.orEmpty()
         val sorted = sortSongs(songs, sort ?: Sort.ALBUM, desc)
@@ -460,6 +530,28 @@ fun buildPage(
         )
     }
 
+    is Page.DecadePage -> {
+        val d = decades(lib.years).firstOrNull { it.decade == page.decade }
+        if (d == null) PageData("${page.decade}s", emptyList()) else {
+            val songs = d.songs
+            val years = when (sort ?: Sort.YEAR) {
+                Sort.COUNT -> d.years.sortedBy(!desc, compareBy { it.songs.size })
+                else -> d.years.sortedBy(!desc, compareBy { it.year })
+            }
+            PageData(
+                title = d.name,
+                hero = Hero(d.name, "Decade", "${plural(d.years.size, "year")} · ${plural(d.albums.size, "album")} · ${plural(songs.size, "song")}",
+                    Art.Symbol(Icons.Rounded.CalendarMonth, d.name)),
+                entries = playActions(songs, shuffleOnly = true) +
+                    Entry("all:${d.decade}s", "All songs", plural(songs.size, "song"), Art.Symbol(Icons.Rounded.LibraryMusic, d.name),
+                        Kind.CONTAINER, target = Page.SongsOf(d.name, "decade", d.decade.toString()), songs = { songs }, wide = true) +
+                    years.map(::yearEntry),
+                sorts = listOf(Sort.YEAR, Sort.COUNT),
+                defaultSort = Sort.YEAR,
+            )
+        }
+    }
+
     is Page.YearPage -> {
         val y = lib.yearByValue[page.year]
         if (y == null) PageData(page.year.toString(), emptyList()) else PageData(
@@ -477,19 +569,21 @@ fun buildPage(
 
     is Page.PlaylistPage -> {
         val p = (playlists + lib.devicePlaylists).firstOrNull { it.id == page.id }
-        if (p == null) PageData("Playlist", emptyList()) else {
-            val songs = sortSongs(p.songIds.mapNotNull { lib.songById[it] }, sort ?: Sort.ORDER, desc)
+        if (p == null) PageData("Playlist", emptyList()) else if (p.mixMode && !p.readOnly) buildMixPlaylist(p, lib, actions) else {
+            // Album artist by default, so an album with various artists isn't split up; Track order is the playlist's own.
+            val songs = sortSongs(p.songIds.mapNotNull { lib.songById[it] }, sort ?: Sort.ALBUM_ARTIST, desc)
             val first = songs.firstOrNull()
             PageData(
                 title = p.name,
-                hero = Hero(p.name, if (p.readOnly) "Device playlist" else "Playlist",
+                hero = Hero(p.name, if (p.readOnly) "Device playlist" else if (p.isMixed) "Mixed by you · mix mode off" else "Playlist",
                     "${plural(songs.size, "song")} · ${formatDurationLong(songs.sumOf { it.durationMs })}",
-                    if (p.id == PlaylistStore.LIKED_ID) Art.Symbol(Icons.Rounded.Favorite, "liked-songs")
-                    else first?.let { Art.Cover(it.albumId, it.id) } ?: Art.Symbol(Icons.Rounded.QueueMusic, p.id)),
-                entries = playActions(songs, collection = true) + songs.map { songEntry(it) },
+                    playlistArt(p, first)),
+                entries = playActions(songs, playlist = true) + listOfNotNull(if (p.readOnly || songs.size < 2) null else mixModeEntry(p)) +
+                    listOfNotNull(playlistSearchEntry(p, songs.size)) +
+                    songs.map { songEntry(it) },
                 playable = songs,
-                sorts = listOf(Sort.ORDER, Sort.NAME, Sort.ARTIST, Sort.ALBUM, Sort.YEAR, Sort.DURATION),
-                defaultSort = Sort.ORDER,
+                sorts = listOf(Sort.ALBUM_ARTIST, Sort.ORDER, Sort.NAME, Sort.ARTIST, Sort.ALBUM, Sort.YEAR, Sort.DURATION),
+                defaultSort = Sort.ALBUM_ARTIST,
             )
         }
     }
@@ -506,7 +600,7 @@ fun buildPage(
         )
     }
 
-    is Page.Search -> buildSearch(page.query, lib)
+    is Page.Search -> if (page.playlistId != null) buildPlaylistSearch(page.query, page.playlistId, lib, playlists) else buildSearch(page.query, lib)
 
     Page.Settings -> buildSettings(actions)
 
@@ -552,29 +646,70 @@ fun buildPage(
         val s = com.dualamp.library.TagEditor.session?.takeIf { it.song.id == page.songId }
         if (s == null) PageData("Edit song info", emptyList()) else {
             val f = s.fields
+            val various = com.dualamp.library.TagEditor.VARIOUS
+            val n = s.songs.size
             // One row per field: A / tap types a new value (clear it to remove the field; the title can't be empty).
+            // With several songs, a field they don't share shows "Various": left empty, each song keeps its own.
             fun row(key: String, label: String, value: String, hint: String, set: (com.dualamp.library.TagEditor.Fields, String) -> com.dualamp.library.TagEditor.Fields) =
-                Entry("edit:$key", label, value.ifBlank { "(empty)" }, Art.Symbol(Icons.Rounded.Edit, key), Kind.ACTION,
-                    trailing = hint, action = { actions.askText(label, value, "OK") { v -> com.dualamp.library.TagEditor.update { set(it, v) } } })
+                Entry("edit:$key", label,
+                    when { value == various -> "Various (each song keeps its own)"; value.isBlank() -> "(empty)"; else -> value },
+                    Art.Symbol(Icons.Rounded.Edit, key), Kind.ACTION, trailing = hint,
+                    action = {
+                        actions.askText(label, if (value == various) "" else value, "OK") { v ->
+                            // An empty answer on a "Various" field changes nothing.
+                            com.dualamp.library.TagEditor.update { x -> set(x, if (v.isBlank() && value == various) various else v) }
+                        }
+                    })
+            val title = if (n > 1) "Edit $n songs" else "Edit song info"
             PageData(
-                title = "Edit song info",
-                hero = Hero(f.title.ifBlank { s.song.title }, f.artist, s.song.path.substringAfterLast('/'), Art.Cover(s.song.albumId, s.song.id)),
-                entries = listOf(
-                    row("title", "Title", f.title, "") { x, v -> x.copy(title = v) },
+                title = title,
+                hero = if (n > 1) Hero(f.album.takeIf { it != various } ?: title, f.albumArtist.takeIf { it != various && it.isNotBlank() } ?: f.artist.takeIf { it != various } ?: "Various artists",
+                    "$n songs · only the fields you change are written to all of them", Art.Cover(s.song.albumId, s.song.id))
+                else Hero(f.title.ifBlank { s.song.title }, f.artist, s.song.path.substringAfterLast('/'), Art.Cover(s.song.albumId, s.song.id)),
+                entries = listOfNotNull(
+                    if (n > 1) null else row("title", "Title", f.title, "") { x, v -> x.copy(title = v) },
                     row("artist", "Artist", f.artist, "") { x, v -> x.copy(artist = v) },
                     row("albumartist", "Album artist", f.albumArtist, "") { x, v -> x.copy(albumArtist = v) },
                     row("album", "Album", f.album, "") { x, v -> x.copy(album = v) },
                     row("date", "Release date", f.date, "2021 or 2021-05-14") { x, v -> x.copy(date = v) },
                     row("genre", "Genre", f.genre, "") { x, v -> x.copy(genre = v) },
-                    row("track", "Track number", f.track, "3 or 3/12") { x, v -> x.copy(track = v) },
+                    if (n > 1) null else row("track", "Track number", f.track, "3 or 3/12") { x, v -> x.copy(track = v) },
                     row("disc", "Disc number", f.disc, "1 or 1/2") { x, v -> x.copy(disc = v) },
+                    row("comment", "Comment", f.comment, "") { x, v -> x.copy(comment = v) },
                     Entry("edit:cover", "Cover art", if (s.cover != null) "New cover picked: saved with the rest" else "Pick a picture from your files or photos",
                         Art.Cover(s.song.albumId, s.song.id), Kind.ACTION, action = actions.pickCover),
+                    Entry("edit:lyrics", "Remove lyrics in the song" + if (n > 1) "s" else "",
+                        if (s.removeLyrics) "Taken out when you save. Your .lrc files stay" else "Lyrics stored in the file's tags (not .lrc files)",
+                        Art.Symbol(Icons.Rounded.Close, "lyrics"), Kind.SETTING, trailing = if (s.removeLyrics) "Yes" else "No",
+                        action = { com.dualamp.library.TagEditor.toggleRemoveLyrics() }),
+                    // Wrong lyrics in a .lrc file next to the song (e.g. another song's): delete the file itself.
+                    actionEntry("act:deletelrc", if (n > 1) "Delete their .lrc files" else "Delete .lrc file", Icons.Rounded.Close,
+                        "The lyrics file next to the song" + (if (n > 1) "s" else "") + ", if there is one. Right away (asks first), not with Save") {
+                        actions.deleteLrc(s.songs)
+                    },
                     actionEntry("act:savetags", if (s.changed) "Save changes" else "Save", Icons.Rounded.Check,
-                        if (s.changed) "Writes them into the song's file (Android asks to allow it)" else "Nothing changed yet", action = actions.saveTags),
+                        if (!s.changed) "Nothing changed yet"
+                        else if (n > 1) "Writes them into the $n songs' files (Android asks to allow it)"
+                        else "Writes them into the song's file (Android asks to allow it)", action = actions.saveTags),
                 ),
             )
         }
+    }
+
+    is Page.MixEdit -> buildMixEdit(page, actions)
+
+    Page.HiddenArtistList -> {
+        val names = com.dualamp.library.HiddenArtists.all()
+        PageData(
+            title = "Hidden artists",
+            entries = if (names.isEmpty()) listOf(
+                Entry("hidden:none", "No hidden artists", "Y (or long-press) on an artist > Hide from Artists. Their songs stay where they are",
+                    Art.Symbol(Icons.Rounded.Person, "none"), Kind.SETTING)
+            ) else names.map { n ->
+                Entry("hidden:$n", n, "A: show in the Artists tab again", Art.Symbol(Icons.Rounded.Person, n), Kind.ACTION,
+                    action = { com.dualamp.library.HiddenArtists.setHidden(n, false) })
+            },
+        )
     }
 
     is Page.ArtistSplitList -> {
@@ -692,16 +827,27 @@ private fun buildRoot(
 ): PageData = when (c) {
     Category.PLAYLISTS -> {
         val s = sort ?: Sort.NAME
-        val all = playlists.filter { it.id != PlaylistStore.LIKED_ID } + lib.devicePlaylists
+        // Your playlists, playlist files (.m3u...), or both (the Showing button; only when there are playlist files).
+        val files = lib.devicePlaylists
+        val show = if (files.isEmpty()) "ALL" else com.dualamp.settings.Prefs.playlistsShow.value
+        val mine = playlists.filter { it.id != PlaylistStore.LIKED_ID }
+        val all = when (show) { "MINE" -> mine; "FILES" -> files; else -> mine + files }
         val sorted = when (s) {
             Sort.ADDED -> all.sortedBy(!desc, compareBy { it.created })
             Sort.COUNT -> all.sortedBy(!desc, compareBy { it.songIds.size })
             else -> all.sortedBy(desc, compareBy { it.name.lowercase() })
         }
+        val next = when (show) { "ALL" -> "MINE"; "MINE" -> "FILES"; else -> "ALL" }
+        fun label(v: String) = when (v) { "MINE" -> "Your playlists"; "FILES" -> "Playlist files"; else -> "All playlists" }
+        val showEntry = if (files.isEmpty()) null else actionEntry("act:plshow", "Showing: ${label(show)}", Icons.Rounded.FilterList,
+            "Tap for ${label(next).lowercase()}") { com.dualamp.settings.Prefs.playlistsShow.value = next }
         PageData(
             title = "Your Library",
-            entries = listOf(actionEntry("act:newpl", "New playlist", Icons.Rounded.Add, action = actions.newPlaylist)) +
-                playlists.filter { it.id == PlaylistStore.LIKED_ID }.map { playlistEntry(it, lib) } +
+            entries = listOfNotNull(
+                if (show == "FILES") null else actionEntry("act:newpl", "New playlist", Icons.Rounded.Add, action = actions.newPlaylist),
+                showEntry,
+            ) +
+                (if (show == "FILES") emptyList() else playlists.filter { it.id == PlaylistStore.LIKED_ID }.map { playlistEntry(it, lib) }) +
                 sorted.map { playlistEntry(it, lib) },
             sorts = listOf(Sort.NAME, Sort.ADDED, Sort.COUNT),
             defaultSort = Sort.NAME,
@@ -709,9 +855,15 @@ private fun buildRoot(
         )
     }
     Category.ARTISTS -> {
+        // Settings > Artists tab: album artists only. Artists who are only featured are left out here (search finds them).
+        // Artists you hid (Y > Hide from Artists) are left out too.
+        val hidden = com.dualamp.library.HiddenArtists.keys()
+        val artists = lib.artists.filter {
+            (!com.dualamp.settings.Prefs.albumArtistsOnly.value || it.albums.isNotEmpty()) && com.dualamp.library.artistKey(it.name) !in hidden
+        }
         val list = when (sort ?: Sort.NAME) {
-            Sort.COUNT -> lib.artists.sortedBy(!desc, compareBy { it.songs.size })
-            else -> lib.artists.sortedBy(desc, compareBy { sortKey(it.name) })
+            Sort.COUNT -> artists.sortedBy(!desc, compareBy { it.songs.size })
+            else -> artists.sortedBy(desc, compareBy { sortKey(it.name) })
         }
         PageData("Your Library", list.map(::artistEntry), sorts = listOf(Sort.NAME, Sort.COUNT), defaultSort = Sort.NAME, defaultView = ViewMode.GRID)
     }
@@ -741,12 +893,27 @@ private fun buildRoot(
         PageData("Your Library", list.map(::genreEntry), sorts = listOf(Sort.NAME, Sort.COUNT), defaultSort = Sort.NAME)
     }
     Category.YEARS -> {
-        val list = when (sort ?: Sort.YEAR) {
-            Sort.COUNT -> lib.years.sortedBy(!desc, compareBy { it.songs.size })
-            // Newest first unless reversed.
-            else -> lib.years.sortedBy(!desc, compareBy { it.year })
+        // Every year, or the years grouped by decade (the Show row at the top).
+        val byDecade = com.dualamp.settings.Prefs.yearsByDecade.value
+        val show = actionEntry("act:yearsview", if (byDecade) "Show every year" else "Group by decade", Icons.Rounded.CalendarMonth,
+            if (byDecade) "Now grouped: 1990s, 2000s..." else "1990s, 2000s...") { com.dualamp.settings.Prefs.yearsByDecade.value = !byDecade }
+        val entries = if (byDecade) {
+            val list = decades(lib.years).let { d ->
+                when (sort ?: Sort.YEAR) {
+                    Sort.COUNT -> d.sortedBy(!desc, compareBy { it.songs.size })
+                    else -> d.sortedBy(!desc, compareBy { it.decade })
+                }
+            }
+            list.map(::decadeEntry)
+        } else {
+            val list = when (sort ?: Sort.YEAR) {
+                Sort.COUNT -> lib.years.sortedBy(!desc, compareBy { it.songs.size })
+                // Newest first unless reversed.
+                else -> lib.years.sortedBy(!desc, compareBy { it.year })
+            }
+            list.map(::yearEntry)
         }
-        PageData("Your Library", list.map(::yearEntry), sorts = listOf(Sort.YEAR, Sort.COUNT), defaultSort = Sort.YEAR)
+        PageData("Your Library", listOf(show) + entries, sorts = listOf(Sort.YEAR, Sort.COUNT), defaultSort = Sort.YEAR)
     }
     Category.FOLDERS -> buildPage(Page.FolderPage(""), lib, playlists, player, sort, desc, actions).copy(title = "Your Library")
     Category.QUEUE -> {
@@ -757,9 +924,15 @@ private fun buildRoot(
         val clear = if (songs.isEmpty()) emptyList() else listOf(
             actionEntry("act:clearqueue", "Clear queue", Icons.Rounded.ClearAll, "Keeps the current song playing · hold L3 also clears", action = actions.clearQueue)
         )
+        val autoplay = com.dualamp.settings.Prefs.autoplay
+        val autoplayRow = Entry("set:autoplay", "Autoplay",
+            if (PlayerConnection.fromPlaylist) "Playing a playlist: it starts over when it ends (Autoplay is for albums, artists and songs)"
+            else "When the album, artist or songs end, keep playing similar ones",
+            Art.Symbol(Icons.Rounded.AllInclusive, "autoplay"), Kind.SETTING, trailing = if (autoplay.value) "On" else "Off",
+            action = { autoplay.value = !autoplay.value; PlayerConnection.autoplayChanged() })
         PageData(
             "Your Library",
-            clear + songs.map { (i, s) ->
+            listOf(autoplayRow) + clear + songs.map { (i, s) ->
                 songEntry(s).copy(
                     key = "queue:$i:${s.id}",
                     queueIndex = i,
@@ -817,7 +990,7 @@ private fun buildSearch(query: String, lib: Library): PageData {
     )
 }
 
-private fun buildSettings(actions: UiActions): PageData {
+private fun buildAllSettings(actions: UiActions): PageData {
     fun setting(key: String, title: String, value: String, subtitle: String = "", action: () -> Unit) =
         Entry("set:$key", title, subtitle, Art.Symbol(Icons.Rounded.Settings, key), Kind.SETTING, trailing = value, action = action)
     fun <T> cycle(options: List<T>, current: T): T = options[(options.indexOf(current) + 1).mod(options.size)]
@@ -835,7 +1008,7 @@ private fun buildSettings(actions: UiActions): PageData {
             Entry("set:pc", "PC music", if (com.dualamp.settings.Prefs.serverUrl.value.isBlank()) "Play your PC / foobar2000 library over Wi-Fi" else "${pcLinkLabel()} · ${com.dualamp.settings.Prefs.serverUrl.value}", Art.Symbol(Icons.Rounded.Computer, "pcmusic"), Kind.CONTAINER, target = Page.PcMusic),
             setting("rescan", "Rescan music library", "", action = actions.rescan),
             setting("edittags", "Edit song info", onOff(p.editTags.value),
-                "In a song's menu (Y or long-press): change its title, artists, album, release date, genre, track, disc and cover art") {
+                "In the menu (Y or long-press) of a song, an album or songs picked with Select multiple: change titles, artists, album, date, genre, track, disc, comment and cover art, or take out the lyrics stored in the songs") {
                 p.editTags.value = !p.editTags.value
             },
             setting("leaks", "Leaks & unreleased", onOff(p.separateLeaks.value),
@@ -843,7 +1016,20 @@ private fun buildSettings(actions: UiActions): PageData {
                 p.separateLeaks.value = !p.separateLeaks.value; LibraryRepository.refresh()
             },
 
+            header("Queue"),
+            setting("autoplay", "Autoplay", onOff(p.autoplay.value),
+                "When an album, artist or list of songs ends, keep playing similar songs. Playlists start over instead") {
+                p.autoplay.value = !p.autoplay.value; PlayerConnection.autoplayChanged()
+            },
+
             header("Multiple artists"),
+            setting("albumartistsonly", "Artists tab: album artists only", onOff(p.albumArtistsOnly.value),
+                "Featured artists don't get their own spot in the Artists tab. Their pages and songs still come up in search") {
+                p.albumArtistsOnly.value = !p.albumArtistsOnly.value
+            },
+            Entry("set:hiddenartists", "Hidden artists",
+                com.dualamp.library.HiddenArtists.all().size.let { if (it == 0) "None. Y (or long-press) on an artist > Hide from Artists" else plural(it, "artist") + " left out of the Artists tab" },
+                Art.Symbol(Icons.Rounded.Person, "hiddenartists"), Kind.CONTAINER, target = Page.HiddenArtistList),
             setting("splitartists", "Songs with several artists", onOff(p.splitArtists.value),
                 "List them under each artist (\"A, B\", \"A feat. B\"...). Works best with tidy, consistent artist tags") {
                 p.splitArtists.value = !p.splitArtists.value; LibraryRepository.refresh()
@@ -918,10 +1104,38 @@ private fun buildSettings(actions: UiActions): PageData {
             Entry("set:overlay", "Fade to visualizer after", "While a song is playing, the song info fades after this long (all the way left: never)",
                 Art.Symbol(Icons.Rounded.Settings, "overlay"), Kind.SETTING,
                 slider = SliderSpec(p.overlayTimeoutSec, 2, 30, 1, "s", minLabel = "Never")),
+            setting("uninterrupted", "Uninterrupted visualizer", onOff(p.uninterruptedViz.value),
+                "On: the song info stays hidden when the next song starts or you skip (L1 / R1). It still shows when you pause or tap") {
+                p.uninterruptedViz.value = !p.uninterruptedViz.value
+            },
+            if (!p.uninterruptedViz.value) null else setting("songnote", "Show the new song", onOff(p.songChangeNote.value),
+                "With Uninterrupted visualizer: the song's title and album, with its artists below, show top left for a moment") {
+                p.songChangeNote.value = !p.songChangeNote.value
+            },
             Entry("set:backdrop", "Song info background", "Darkens the visualizer behind the song info",
                 Art.Symbol(Icons.Rounded.Settings, "backdrop"), Kind.SETTING,
                 slider = SliderSpec(p.infoBackdrop, 0, 100, 5, "%")),
             setting("presetname", "Show preset name", onOff(p.showPresetName.value)) { p.showPresetName.value = !p.showPresetName.value },
+
+            header("Now playing - bottom screen"),
+            setting("miniplayer", "Mini player", onOff(p.miniPlayer.value),
+                "Both screens: the song playing at the bottom of this screen (tap it for the bigger view). Off: more room for your library; the top screen still has the controls") {
+                p.miniPlayer.value = !p.miniPlayer.value
+            },
+            setting("playerwave", "Waveform progress bar", onOff(p.playerWaveform.value),
+                "The now-playing view's progress bar shows the song's waveform, like the top screen's (tap or drag it to jump)") {
+                p.playerWaveform.value = !p.playerWaveform.value
+            },
+            setting("playerartbg", "Album art background", onOff(p.playerArtBackground.value),
+                "The bottom screen's now-playing view (tap the player bar) shows the song's album art, blurred, behind it") {
+                p.playerArtBackground.value = !p.playerArtBackground.value
+            },
+            if (!p.playerArtBackground.value) null else Entry("set:playerartblur", "Album art blur",
+                "How blurred the album art is (all the way left: not blurred)",
+                Art.Symbol(Icons.Rounded.Settings, "playerartblur"), Kind.SETTING, slider = SliderSpec(p.playerArtBlur, 0, 60, 3, "", minLabel = "Sharp") { v -> "${v * 100 / 60} %" }),
+            if (!p.playerArtBackground.value) null else Entry("set:playerartdim", "Background behind the buttons",
+                "Darkens the album art behind the title, progress bar and buttons so they are easy to see",
+                Art.Symbol(Icons.Rounded.Settings, "playerartdim"), Kind.SETTING, slider = SliderSpec(p.playerArtDim, 0, 100, 5, "%")),
 
             header("Lyrics"),
             setting("lyrics", "Lyrics", onOff(p.lyricsOn.value), "On the player, over the visualizer (also the lyrics button on the player, or double-click the right stick, R3)") { p.lyricsOn.value = !p.lyricsOn.value },
@@ -936,6 +1150,12 @@ private fun buildSettings(actions: UiActions): PageData {
             setting("lyricsonline", "Find lyrics online", onOff(p.lyricsOnline.value),
                 "For songs without a .lrc file or lyrics in their tags: asks lrclib.net (sends the title and artist)") {
                 p.lyricsOnline.value = !p.lyricsOnline.value; com.dualamp.library.LyricsRepository.retryMissing()
+            },
+
+            header("Artist pictures"),
+            setting("artistart", "Fetch artist pictures", onOff(p.fetchArtistArt.value),
+                "On Wi-Fi, finds a photo of each artist online (asks Deezer, sending only the artist's name). Off: artists show one of their covers. Your own pictures (Y on an artist > Choose artist picture) always show") {
+                p.fetchArtistArt.value = !p.fetchArtistArt.value; if (p.fetchArtistArt.value) com.dualamp.library.ArtistImages.retryMissing()
             },
 
             header("Visualizer"),
@@ -1026,10 +1246,19 @@ object LibraryNav {
     private val _requests = kotlinx.coroutines.flow.MutableSharedFlow<Page>(extraBufferCapacity = 4)
     val requests: kotlinx.coroutines.flow.SharedFlow<Page> get() = _requests
     fun open(page: Page) { _requests.tryEmit(page) }
+
+    // The top screen's song menu: delete the song's .lrc file (the library screen asks first, and Android if needed).
+    private val _deleteLrc = kotlinx.coroutines.flow.MutableSharedFlow<Song>(extraBufferCapacity = 2)
+    val deleteLrcRequests: kotlinx.coroutines.flow.SharedFlow<Song> get() = _deleteLrc
+    fun deleteLrc(song: Song) { _deleteLrc.tryEmit(song) }
+    // ...and take out the lyrics stored in the song's tags.
+    private val _removeLyrics = kotlinx.coroutines.flow.MutableSharedFlow<Song>(extraBufferCapacity = 2)
+    val removeLyricsRequests: kotlinx.coroutines.flow.SharedFlow<Song> get() = _removeLyrics
+    fun removeLyrics(song: Song) { _removeLyrics.tryEmit(song) }
 }
 
 /** A section title inside a page (e.g. Albums / Singles under Unreleased & leaks). */
-private fun sectionHeader(key: String, title: String) = Entry("hdr:$key", title, "", Art.None, Kind.HEADER)
+internal fun sectionHeader(key: String, title: String) = Entry("hdr:$key", title, "", Art.None, Kind.HEADER)
 
 /**
  * An artist's albums and singles ([Album.isSingle]), each newest first: the official ones, or ([leaks]) the
@@ -1096,3 +1325,120 @@ private fun albumArtSettings(): List<Entry> {
 private fun colorChoice(key: String, title: String, subtitle: String, names: Collection<String>, current: String, set: (String) -> Unit) =
     Entry("set:$key", title, subtitle, Art.Symbol(Icons.Rounded.Settings, key), Kind.SETTING,
         trailing = current, choices = names.toList(), onChoose = set)
+
+/**
+ * A song listed twice (common in big playlist files) would give two rows the same key, which the lists can't take (it
+ * crashed DualAmp). Repeats get "#2", "#3"... so every row is its own.
+ */
+fun PageData.withUniqueKeys(): PageData {
+    val seen = HashMap<String, Int>()
+    var changed = false
+    val list = entries.map { e ->
+        val n = (seen[e.key] ?: 0) + 1
+        seen[e.key] = n
+        if (n == 1) e else { changed = true; e.copy(key = "${e.key}#$n") }
+    }
+    return if (changed) copy(entries = list) else this
+}
+
+/** The settings' tabs (chips at the top of Settings), in order. Each shows only its own settings. */
+enum class SettingsTab(val label: String, internal val sections: List<String>) {
+    LIBRARY("Music library", listOf("Music library", "Queue")),
+    ARTISTS("Artists", listOf("Multiple artists", "Artist pictures")),
+    VIEW("Library view", listOf("Library view")),
+    THEME("Theme", listOf("Theme")),
+    SCREENS("Screens", listOf("Screens")),
+    NOW_PLAYING("Now playing", listOf("Now playing - top screen", "Now playing - bottom screen")),
+    LYRICS("Lyrics", listOf("Lyrics")),
+    VISUALIZER("Visualizer", listOf("Visualizer")),
+    ALBUM_ART("Album art visualizer", listOf("albumart")),
+    HELP("Help & controls", listOf("Help & controls")),
+    ABOUT("About", listOf("About"));
+
+    companion object {
+        fun current(): SettingsTab = runCatching { valueOf(com.dualamp.settings.Prefs.settingsTab.value) }.getOrDefault(LIBRARY)
+    }
+}
+
+/** Sub-headings inside a tab that holds several sections (e.g. Now playing: Top screen, Bottom screen). */
+private val SUBHEADINGS = mapOf(
+    "Now playing - top screen" to "Top screen", "Now playing - bottom screen" to "Bottom screen",
+    "Music library" to "Music library", "Queue" to "Queue",
+    "Multiple artists" to "Multiple artists", "Artist pictures" to "Artist pictures",
+)
+
+/** Settings: the chosen tab's settings ([SettingsTab]). */
+private fun buildSettings(actions: UiActions): PageData {
+    val all = buildAllSettings(actions)
+    val tab = SettingsTab.current()
+    // Split the full list at its section headings ("hdr:<section>").
+    val sections = LinkedHashMap<String, MutableList<Entry>>()
+    var cur = ""
+    for (e in all.entries) {
+        if (e.kind == Kind.HEADER && e.key.startsWith("hdr:")) { cur = e.key.removePrefix("hdr:"); sections[cur] = mutableListOf(e); continue }
+        sections.getOrPut(cur) { mutableListOf() } += e
+    }
+    val several = tab.sections.size > 1
+    val entries = tab.sections.flatMap { name ->
+        val list = sections[name] ?: return@flatMap emptyList()
+        val head = list.first()
+        val rest = list.drop(1)
+        if (rest.isEmpty()) emptyList()
+        else if (several) listOf(head.copy(title = SUBHEADINGS[name] ?: head.title)) + rest
+        else rest
+    }.ifEmpty {
+        // Album art visualizer with MilkDrop presets showing: how to get there.
+        if (tab == SettingsTab.ALBUM_ART) listOf(
+            Entry("set:albumartoff", "Album art visualizer is off", "Visualizer tab > Visualizer shows: Album art, then its styles are here",
+                Art.Symbol(Icons.Rounded.Info, "albumartoff"), Kind.SETTING,
+                action = { com.dualamp.settings.Prefs.settingsTab.value = SettingsTab.VISUALIZER.name }),
+        ) else emptyList()
+    }
+    return all.copy(entries = entries)
+}
+
+/** The artists a song is listed under (its own, the album artist, and each of several). */
+internal fun artistsOf(s: Song): List<String> =
+    (com.dualamp.library.ArtistNames.split(s.artist) + com.dualamp.library.ArtistNames.split(s.albumArtist) +
+        com.dualamp.library.ArtistNames.split(s.primaryArtist) + com.dualamp.library.ArtistNames.credited(s))
+        .filter { it.isNotBlank() }.distinctBy { com.dualamp.library.artistKey(it) }
+
+/** "Search this playlist" on a playlist's page: opens search limited to its songs and artists. */
+internal fun playlistSearchEntry(p: Playlist, songs: Int): Entry? = if (songs < 2) null else
+    Entry("act:plsearch", "Search this playlist", "Only its songs and artists", Art.Symbol(Icons.Rounded.Search, "plsearch"),
+        Kind.ACTION, target = Page.Search("", p.id))
+
+/** Searching inside one playlist: its artists (each opens their songs in the playlist), then its songs. */
+private fun buildPlaylistSearch(query: String, playlistId: String, lib: Library, playlists: List<Playlist>): PageData {
+    val p = (playlists + lib.devicePlaylists).firstOrNull { it.id == playlistId } ?: return PageData("Search", emptyList())
+    val title = "Search ${p.name}"
+    val q = query.trim().lowercase()
+    if (q.isEmpty()) return PageData(title, emptyList())
+    val songs = p.songIds.mapNotNull { lib.songById[it] }.distinctBy { it.id }
+    fun score(s: String): Int? {
+        val t = s.lowercase()
+        return when { t == q -> 0; t.startsWith(q) -> 1; t.contains(" $q") || t.contains("($q") -> 2; t.contains(q) -> 3; else -> null }
+    }
+    // Artists in the playlist whose name matches, with how many of their songs are in it.
+    val byArtist = LinkedHashMap<String, Pair<String, Int>>()
+    for (s in songs) for (a in artistsOf(s)) {
+        val k = com.dualamp.library.artistKey(a)
+        val cur = byArtist[k]
+        byArtist[k] = (cur?.first ?: a) to ((cur?.second ?: 0) + 1)
+    }
+    val artists = byArtist.values.mapNotNull { (name, n) -> score(name)?.let { Triple(name, n, it) } }
+        .sortedWith(compareBy({ it.third }, { -it.second })).take(20)
+        .map { (name, n) ->
+            val first = songs.firstOrNull { s -> artistsOf(s).any { com.dualamp.library.artistKey(it) == com.dualamp.library.artistKey(name) } }
+            Entry("plart:$name", name, "Artist · ${plural(n, "song")} in this playlist",
+                Art.Artist(name, first?.let { Art.Cover(it.albumId, it.id) } ?: Art.Symbol(Icons.Rounded.Person, name)),
+                Kind.CONTAINER, round = true, badge = Icons.Rounded.Person,
+                target = Page.SongsOf("$name in ${p.name}", "plartist", "${p.id}\u0000$name"),
+                songs = { songs.filter { s -> artistsOf(s).any { com.dualamp.library.artistKey(it) == com.dualamp.library.artistKey(name) } } })
+        }
+    // Songs: a title match first, then those matching by artist or album.
+    val matched = songs.mapNotNull { s ->
+        listOfNotNull(score(s.title), score(s.artist)?.plus(4), score(s.album)?.plus(8)).minOrNull()?.let { s to it }
+    }.sortedBy { it.second }.map { it.first }.take(200)
+    return PageData(title, artists + matched.map { songEntry(it) }, playable = matched)
+}

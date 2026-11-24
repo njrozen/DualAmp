@@ -24,6 +24,9 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material3.Icon
@@ -264,6 +267,11 @@ internal fun CoverFlow(
                                 .reflection(Surface1),
                         ) {
                             ArtBox(coverArt(e), e.round, Modifier.fillMaxSize())
+                            // Picked with Select multiple: an accent frame and a tick, turning with the cover.
+                            if (e.key in selectedKeys.value) {
+                                Box(Modifier.fillMaxSize().border(4.dp, Accent, if (e.round) CircleShape else RoundedCornerShape(6.dp)))
+                                SelectedMark(Modifier.align(Alignment.TopEnd).padding(8.dp).size(36.dp))
+                            }
                         }
                     }
                 }
@@ -279,13 +287,24 @@ internal fun CoverFlow(
                     Icon(Icons.Rounded.Equalizer, null, tint = Accent, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
                 }
+                if (current != null && current.key in selectedKeys.value) {
+                    Icon(Icons.Rounded.CheckCircle, "Selected", tint = Accent, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                }
                 Text(current?.title.orEmpty(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
                     maxLines = 1, modifier = Modifier.scrollIfLong())
             }
-            Text(
-                listOfNotNull(current?.subtitle?.ifBlank { null }, if (covers.size > 1) "$position of ${covers.size}" else null).joinToString(" · "),
-                color = TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // A mixed playlist's mixer symbol (or a search result's artist / album icon).
+                current?.badge?.let {
+                    Icon(it, null, tint = TextDim, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                }
+                Text(
+                    listOfNotNull(current?.subtitle?.ifBlank { null }, if (covers.size > 1) "$position of ${covers.size}" else null).joinToString(" · "),
+                    color = TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
             Spacer(Modifier.height(2.dp))
         }
     }

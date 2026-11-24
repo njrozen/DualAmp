@@ -27,6 +27,8 @@ class LibraryActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         alive = true
+        // The process can outlive a quit (the lid-buttons service keeps it): connect to the music again.
+        com.dualamp.playback.PlayerConnection.connect(this)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         lifecycleScope.launch { AppEvents.finishAll.collect { finishAndRemoveTask() } }
         lifecycleScope.launch { AppEvents.finishDual.collect { closingForModeSwitch = true; finishAndRemoveTask() } }

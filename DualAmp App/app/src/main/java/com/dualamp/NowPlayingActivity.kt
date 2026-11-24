@@ -46,8 +46,9 @@ open class NowPlayingActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.dualamp.playback.PlayerConnection.connect(this)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        dual = !singleScreen && DualScreen.isDualActive(this)
+        dual =!singleScreen && DualScreen.isDualActive(this)
         if (dual) {
             // The visualizer gets the whole top screen.
             WindowInsetsControllerCompat(window, window.decorView).apply {

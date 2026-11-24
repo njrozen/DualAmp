@@ -94,6 +94,27 @@ object LyricsRepository {
     /** Forget a "no lyrics" answer (e.g. after online lookup is turned on). */
     fun retryMissing() = missing.clear()
 
+    /** Forget what was found for [song] (its tags were just changed). */
+    fun forget(song: Song) {
+        val key = key(song)
+        memory.remove(key)
+        missing.remove(key)
+        revision.value++
+    }
+
+    /**
+     * True when [song] has lyrics stored in its own tags (what "Remove lyrics from the song" takes out): already found
+     * there, or read from its ID3 / FLAC tags. Reads the file, so keep it off hot paths.
+     */
+    fun inTags(context: Context, song: Song): Boolean {
+        if (song.isRemote) return false
+        memory.get(key(song))?.let { if (it.source == "tags") return true }
+        return runCatching { embedded(context.applicationContext, song) != null }.getOrDefault(false)
+    }
+
+    /** Goes up when lyrics were forgotten ([forget]), so the player loads them again. */
+    val revision = kotlinx.coroutines.flow.MutableStateFlow(0)
+
     private fun find(context: Context, song: Song, key: String): Lyrics? {
         if (!song.isRemote) {
             lrcFile(context, song)?.let { Lyrics.parse(it, "lrc")?.let { l -> return l } }
@@ -127,18 +148,76 @@ object LyricsRepository {
     }
 
     private fun readFromGrantedFolder(context: Context, path: String): String? {
-        for (perm in context.contentResolver.persistedUriPermissions) {
-            val tree = perm.uri
-            val root = LibraryRepository.pathFromTree(tree)?.trimEnd('/') ?: continue
-            if (!path.startsWith("$root/")) continue
-            val treeId = DocumentsContract.getTreeDocumentId(tree)
-            val docId = treeId.trimEnd('/') + "/" + path.removePrefix("$root/")
-            val doc = DocumentsContract.buildDocumentUriUsingTree(tree, docId)
+        for (doc in grantedDocs(context, path)) {
             val text = runCatching { context.contentResolver.openInputStream(doc)?.use { it.readBytes().toString(Charsets.UTF_8) } }.getOrNull()
             if (text != null) return text
         }
         return null
     }
+
+    /** [path] inside each folder given to DualAmp (Delete .lrc file asks for one when Android needs it). */
+    private fun grantedDocs(context: Context, path: String): List<android.net.Uri> =
+        context.contentResolver.persistedUriPermissions.mapNotNull { perm ->
+            val tree = perm.uri
+            val root = LibraryRepository.pathFromTree(tree)?.trimEnd('/') ?: return@mapNotNull null
+            if (!path.startsWith("$root/")) return@mapNotNull null
+            val treeId = DocumentsContract.getTreeDocumentId(tree)
+            DocumentsContract.buildDocumentUriUsingTree(tree, treeId.trimEnd('/') + "/" + path.removePrefix("$root/"))
+        }
+
+    // --- Deleting a song's .lrc file (wrong lyrics) ----------------------------------------------------
+
+    /** The song's .lrc file (next to it, same name), if there is one DualAmp can see. */
+    fun lrcPath(context: Context, song: Song): String? {
+        if (song.isRemote) return null
+        val base = song.path.substringBeforeLast('.', song.path)
+        return listOf("$base.lrc", "$base.LRC").firstOrNull { path ->
+            runCatching { File(path).exists() }.getOrDefault(false) || mediaStoreUri(context, path) != null ||
+                grantedDocs(context, path).any { doc -> runCatching { context.contentResolver.query(doc, null, null, null, null)?.use { it.count > 0 } }.getOrNull() == true }
+        }
+    }
+
+    /** The file as Android's media store knows it (it lists .lrc files as subtitles), or null. */
+    private fun mediaStoreUri(context: Context, path: String): android.net.Uri? = runCatching {
+        val files = android.provider.MediaStore.Files.getContentUri("external")
+        @Suppress("DEPRECATION")
+        context.contentResolver.query(files, arrayOf(android.provider.MediaStore.Files.FileColumns._ID),
+            "${android.provider.MediaStore.Files.FileColumns.DATA} = ?", arrayOf(path), null)?.use { c ->
+            if (c.moveToFirst()) android.content.ContentUris.withAppendedId(files, c.getLong(0)) else null
+        }
+    }.getOrNull()
+
+    /** What happened deleting .lrc files ([deleteLrc]). */
+    class LrcDeletion(
+        val deleted: Int,
+        /** Android asks the user first ("Allow DualAmp to delete...?"): the media store items to ask for. */
+        val needConfirm: List<android.net.Uri>,
+        /** Android won't let DualAmp near them: a folder must be given to DualAmp first (the first file's folder). */
+        val needFolder: String?,
+    )
+
+    /** Deletes the .lrc files of [songs] (the songs themselves and their tags stay). Off the main thread. */
+    fun deleteLrc(context: Context, songs: List<Song>): LrcDeletion {
+        var deleted = 0
+        val confirm = ArrayList<android.net.Uri>()
+        var folder: String? = null
+        for (song in songs) {
+            val path = lrcPath(context, song) ?: continue
+            val gone = runCatching { File(path).delete() }.getOrDefault(false) ||
+                grantedDocs(context, path).any { runCatching { DocumentsContract.deleteDocument(context.contentResolver, it) }.getOrDefault(false) } ||
+                mediaStoreUri(context, path)?.let { uri ->
+                    // DualAmp's own files go straight away; anyone else's need the user's OK.
+                    runCatching { context.contentResolver.delete(uri, null, null) > 0 }.getOrDefault(false).also { if (!it) confirm += uri }
+                } ?: run { if (folder == null) folder = path.substringBeforeLast('/'); false }
+            if (gone) { deleted++; forget(song) }
+            Log.i(TAG, "Delete $path: ${if (gone) "deleted" else "needs permission"}")
+        }
+        return LrcDeletion(deleted, confirm, folder)
+    }
+
+    /** Android's "allow DualAmp to delete these files?" prompt. */
+    fun deleteRequest(context: Context, uris: List<android.net.Uri>) =
+        android.provider.MediaStore.createDeleteRequest(context.contentResolver, uris)
 
     // --- lyrics in the song's tags (ID3 USLT / SYLT, FLAC LYRICS) --------------------------------------
 

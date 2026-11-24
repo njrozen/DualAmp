@@ -50,6 +50,14 @@ object LibraryRepository {
                 override fun onChange(selfChange: Boolean) = refresh(debounceMs = 1500)
             },
         )
+        // Playlist files (.m3u...) added, changed or removed, also by DualAmp adding songs to one.
+        @Suppress("DEPRECATION")
+        app.contentResolver.registerContentObserver(
+            MediaStore.Audio.Playlists.EXTERNAL_CONTENT_URI, true,
+            object : ContentObserver(Handler(Looper.getMainLooper())) {
+                override fun onChange(selfChange: Boolean) { if (Prefs.showPlaylistFiles.value) refresh(debounceMs = 1500) }
+            },
+        )
         refresh()
         // Keeps an eye on the PC (DualAmp Server): the PC tab's spinner / checkmark and the "Can't reach your PC" pop-up.
         scope.launch {
@@ -127,7 +135,7 @@ object LibraryRepository {
                 title = first.album,
                 artist = first.primaryArtist,
                 year = list.maxOf { it.year },
-                genre = list.groupingBy { it.genre }.eachCount().maxByOrNull { it.value }?.key.orEmpty(),
+                genre = list.flatMap { it.genres }.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key.orEmpty(),
                 songs = sorted,
             )
         }.sortedBy { it.title.lowercase() }
@@ -161,8 +169,15 @@ object LibraryRepository {
         val albumArtist = artists.flatMap { a -> a.albums.filter { ArtistNames.split(it.artist).size <= 1 }.map { it.id to a.name } }.toMap()
         val unifiedAlbums = albums.map { al -> albumArtist[al.id]?.let { al.copy(artist = it) } ?: al }
 
-        val genres = songs.filter { it.genre.isNotBlank() }.groupBy { it.genre.trim().lowercase() }.map { (_, list) ->
-            val name = list.groupingBy { it.genre.trim() }.eachCount().maxByOrNull { it.value }!!.key
+        // A song tagged "Rock; Punk" is in Rock and in Punk. Each genre is shown with its most common spelling.
+        val genreSongs = LinkedHashMap<String, MutableList<Song>>()
+        val genreSpellings = HashMap<String, MutableMap<String, Int>>()
+        for (s in songs) for (g in s.genres) {
+            genreSongs.getOrPut(g.lowercase()) { ArrayList() } += s
+            genreSpellings.getOrPut(g.lowercase()) { HashMap() }.merge(g, 1, Int::plus)
+        }
+        val genres = genreSongs.map { (key, list) ->
+            val name = genreSpellings[key]!!.maxByOrNull { it.value }!!.key
             val ids = list.map { it.albumId }.toSet()
             Genre(name, unifiedAlbums.filter { it.id in ids }, list)
         }.sortedBy { it.name.lowercase() }

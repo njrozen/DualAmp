@@ -35,6 +35,8 @@ data class Song(
     val folder: String get() = path.substringBeforeLast('/', "")
     /** Artist used for grouping, so compilations don't scatter across many artists. */
     val primaryArtist: String get() = albumArtist.ifBlank { artist }
+    /** Each genre on the tag: "Rock; Punk" or "Rock, Punk" is Rock and Punk, not a genre of its own. */
+    val genres: List<String> get() = splitGenres(genre)
 
     /** e.g. "FLAC", "MP3", "OPUS" from the file name or MIME type. */
     val codec: String
@@ -44,7 +46,8 @@ data class Song(
             return mime.substringAfter('/').uppercase()
         }
 
-    fun toMediaItem(): MediaItem = MediaItem.Builder()
+    /** [from]: how it got into the queue (PlaybackService.FROM_QUEUE / FROM_AUTOPLAY), null for what you chose to play. */
+    fun toMediaItem(from: String? = null): MediaItem = MediaItem.Builder()
         .setMediaId(id.toString())
         .setUri(uri)
         .setMediaMetadata(
@@ -61,6 +64,7 @@ data class Song(
                 .setIsPlayable(true)
                 .setIsBrowsable(false)
                 .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+                .apply { if (from != null) setExtras(android.os.Bundle().apply { putString("dualamp.from", from) }) }
                 .build()
         )
         .build()
@@ -123,7 +127,17 @@ data class Playlist(
     val created: Long,
     /** Playlists from the Android media store are shown but not edited. */
     val readOnly: Boolean = false,
-)
+    /** Mix mode: plays in order with its [transitions] (DualAmp 1.6). */
+    val mixMode: Boolean = false,
+    /** Transitions between songs next to each other, by [com.dualamp.mix.Transition.key]. */
+    val transitions: Map<String, com.dualamp.mix.Transition> = emptyMap(),
+) {
+    /** The transitions still between two songs next to each other. */
+    val liveTransitions: List<com.dualamp.mix.Transition>
+        get() = songIds.zipWithNext().mapNotNull { (a, b) -> transitions[com.dualamp.mix.Transition.key(a, b)] }
+    /** Has at least one transition (shown with the mix symbol). */
+    val isMixed: Boolean get() = liveTransitions.isNotEmpty()
+}
 
 class Library(
     val songs: List<Song>,
@@ -166,3 +180,10 @@ class Library(
 
 /** Artist identity ignoring capitalization and surrounding spaces. */
 fun artistKey(name: String): String = name.trim().lowercase()
+
+/**
+ * The genres on one tag. Several genres are written "Rock; Punk", "Rock, Punk", "Rock | Punk" or (ID3v2.4) with a
+ * null between them. A slash is left alone: "Hip-Hop/Rap" and "R&B/Soul" are one genre each.
+ */
+fun splitGenres(tag: String): List<String> =
+    tag.split(';', ',', '|', '\u0000').map { it.trim() }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }

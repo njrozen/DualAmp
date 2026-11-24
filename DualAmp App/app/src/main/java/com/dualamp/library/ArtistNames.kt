@@ -83,3 +83,23 @@ object ArtistNames {
     /** Everyone credited on [song]: its artist tag and features in the title (the album artist is separate). */
     fun credited(song: Song): List<String> = (split(song.artist) + fromTitle(song.title)).distinctBy { artistKey(it) }
 }
+
+/**
+ * Artists hidden from the Artists tab (Y on an artist > Hide from Artists; Settings > Multiple artists > Hidden artists).
+ * Their pages, songs and search results stay; they just don't get a spot in the tab.
+ */
+object HiddenArtists {
+    private fun names(): List<String> = com.dualamp.settings.Prefs.hiddenArtists.value.split('\n').filter { it.isNotBlank() }
+
+    /** As they were named when hidden. */
+    fun all(): List<String> = names().sortedBy { it.lowercase() }
+
+    fun keys(): Set<String> = names().map(::artistKey).toSet()
+
+    fun isHidden(name: String) = artistKey(name) in keys()
+
+    fun setHidden(name: String, hidden: Boolean) {
+        val rest = names().filter { artistKey(it) != artistKey(name) }
+        com.dualamp.settings.Prefs.hiddenArtists.value = (if (hidden) rest + name.trim() else rest).joinToString("\n")
+    }
+}

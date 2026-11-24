@@ -16,6 +16,8 @@ class DualAmpApp : Application() {
         com.dualamp.ui.AppTheme.load()
         com.dualamp.settings.applyLaunchViews()
         PlaylistStore.init(this)
+        com.dualamp.library.ArtistImages.init(this)
+        com.dualamp.mix.SongAnalyzer.init(this)
         PresetManager.init(this)
         VizFolders.init(this)
         LibraryRepository.init(this)

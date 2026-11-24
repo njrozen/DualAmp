@@ -65,7 +65,9 @@ object ControllerBus {
             KeyEvent.KEYCODE_BUTTON_R1 -> PlayerConnection.next()
             else -> return false
         }
-        VizControl.pokeOverlay()
+        // Settings > Uninterrupted visualizer: skipping songs leaves the visualizer clear too.
+        val skip = event.keyCode == KeyEvent.KEYCODE_BUTTON_L1 || event.keyCode == KeyEvent.KEYCODE_BUTTON_R1
+        if (!(skip && com.dualamp.settings.Prefs.uninterruptedViz.value)) VizControl.pokeOverlay()
         return true
     }
 

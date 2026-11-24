@@ -55,12 +55,20 @@ object ControlsHelp {
             "Single-screen" to "Settings > Swap sides moves the library to the left / top; the grid has its own size there",
             "Volume" to "On the Thor, both screens: the top screen's volume. Single-screen: the volume of the screen DualAmp is on",
             "One screen" to "Settings > Use both screens: Top or Bottom Screen. Opening DualAmp on the bottom screen (or as a Cocoon companion app) also runs it there alone",
-            "Lyrics" to "The lyrics button (top left of the player) or double-click the right stick (R3). From .lrc files next to your songs, the songs' tags, or lrclib.net. Settings > Lyrics: background, timing",
+            "Lyrics" to "The lyrics button (top left of the player) or double-click the right stick (R3). From .lrc files next to your songs, the songs' tags, or lrclib.net. Settings > Lyrics: background, timing. Wrong lyrics from a .lrc file: Y on the song > Delete .lrc file; lyrics stored in the song: Remove lyrics from the song",
             "Stream" to "Settings > Stream visualizer: open the address it shows in a TV, PC or phone browser on the same Wi-Fi",
             "Tabs layout" to "Settings > Screens > Single-screen layout: Tabs. The library with tabs (top or bottom); the player bar opens the big player (back arrow or B closes it; swipe the cover to skip)",
-            "Several artists" to "Songs with several artists (\"A, B\", \"A feat. B\") are listed under each. Settings > Multiple artists sets the separators",
-            "Edit song info" to "In a song's menu (Y or long-press): change its title, artists, album, release date, genre, track, disc or cover art",
+            "Several artists" to "Songs with several artists (\"A, B\", \"A feat. B\") are listed under each. Settings > Artists sets the separators",
+            "Uninterrupted" to "Settings > Uninterrupted visualizer: the song info stays hidden when the next song starts or you skip; Show the new song puts its name top left for a moment",
+            "Hide artists" to "Y (or long-press) on an artist > Hide from Artists: out of the Artists tab, songs unaffected. Settings > Hidden artists brings them back",
+            "Edit song info" to "Menu (Y or long-press) of a song, album or Select multiple: titles, artists, album, date, genre, track, disc, comment, cover art; remove stored lyrics",
             "Leaks & unreleased" to "Songs whose comment tag says leak, leaks, leaked or unreleased get their own section on artist pages (albums and singles), apart from the official ones",
+            "Mix mode" to "A playlist > Mix mode: On. It plays in order, with a transition between songs (Auto-mix makes them all). Each song shows its tempo (BPM) and key",
+            "Transitions" to "A: open the transition between two songs: style, length in bars, snap to the grid (beats, bars or off), where they meet (left / right: a beat or a bar), volume, EQ, filter, echo, loop, beatmatching, each song's lows / mids / highs. Play the transition hears it; Save keeps it. Both screens: the waveforms are on top (drag them to slide a song; it jumps from beat to beat, or bar to bar)",
+            "Customize" to "Custom in a setting's list, or Customize on the waveform: its curve gets dots on the waveform. Tap the line to add a dot, drag a dot to move it, tap it to remove it. Undo / Redo take changes back",
+            "Artist pictures" to "Y on an artist > Choose artist picture (your own photo), or Settings > Fetch artist pictures to find them online on Wi-Fi",
+            "Now playing (bottom)" to "Tap the player bar: big buttons and the lyrics. Tap the title for the song's menu. Settings > Album art background puts the cover behind it",
+            "Move songs" to "Y (or long-press) on a song in a playlist > Move up / Move down: in a mix the order makes the transitions",
         ),
         "Library" to listOf(
             "Tabs" to "Playlists, Liked Songs, Artists, Albums, Singles, Songs, Genres, Years, Folders and the Queue",
@@ -72,7 +80,7 @@ object ControlsHelp {
             "Theme" to "Settings > Theme: Default, Light, OLED black or Midnight, and the accent color",
             "Views" to "Grid (3 to 6 per row), list or Cover Flow: Settings > Library view, shared everywhere or separate for categories and the pages inside them; sort by name, artist, year, date added and more",
             "Playlists" to "Create, rename and fill them from any item's menu. Playlist files in your folders show up too",
-            "Queue" to "Play next / add to queue from any menu. Clearing keeps the current song",
+            "Queue" to "Play next / add to queue from any menu: before the rest of the album or playlist. Clearing keeps the current song. Autoplay (Queue tab): similar songs when an album or artist ends; playlists start over",
         ),
         "Visualizer" to listOf(
             "Presets" to "Nearly 10,000 MilkDrop presets built in; import your own .milk folders in Settings",
@@ -128,7 +136,7 @@ object ControlsHelp {
             "Long-press" to "Item menu (same as Y)",
             "Select multiple (in the item menu)" to "Then tap / A to tick more songs, albums or artists; the bar adds them all to the queue or a playlist",
             "View button" to "List, grid or Cover Flow; the library categories share one view",
-            "Player bar" to "Add to playlist, previous, play/pause, next; tap the song for the queue, long-press it for album / artist",
+            "Player bar" to "Add to playlist, previous, play/pause, next; tap the song for the bottom now-playing view (big buttons, ±10 s, lyrics; B closes), long-press it for album / artist",
             "Search / name keyboard" to "D-pad + A type, X delete, Y space, L1/R1 move cursor, L2 letters / symbols, Start done, B close (nothing typed: leaves search)",
             "Header tabs" to "PC music, Library and Equalizer, shown as icons (the title says which one you are in)",
             "Header buttons" to "Search; visualizer folders and Settings, each its own tab (press again to go back). The DualAmp logo shows About",
@@ -222,6 +230,13 @@ internal enum class Onboarding(val title: String, val body: String, val primary:
             "Accessibility settings (Installed apps > DualAmp). It only reacts to those buttons while the screen " +
             "is off, so games are not affected. You can do this later in Settings > Shoulder buttons while asleep.",
         "Open settings (A)", "Not now (B)",
+    ),
+    ARTIST_ART(
+        "Pictures of your artists?",
+        "DualAmp can look for a photo of each artist online when the Thor is on Wi-Fi (it sends only the artist's name). " +
+            "If you'd rather not, artists show one of their album or song covers. You can also choose your own pictures " +
+            "(Y on an artist > Choose artist picture), and turn this on or off any time in Settings > Fetch artist pictures.",
+        "Fetch pictures (A)", "No thanks (B)",
     ),
 }
 

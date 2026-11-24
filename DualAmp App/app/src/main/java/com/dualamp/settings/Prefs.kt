@@ -48,6 +48,10 @@ object Prefs {
     /** Seconds before the song info fades out on the top screen. 0 = never. */
     /** Seconds before the song info fades to the visualizer (3-30; 2 or less = never). */
     val overlayTimeoutSec = Setting("overlay_timeout", 4)
+    /** Uninterrupted visualizer: a new song doesn't bring the song info back over the visualizer. */
+    val uninterruptedViz = Setting("uninterrupted_viz", false)
+    /** With [uninterruptedViz]: a new song's title, album and artists show top left for a moment. */
+    val songChangeNote = Setting("song_change_note", true)
     /** When the visualizer moves to a new preset: INTERVAL, SONG (on track change) or LOCKED. */
     val presetMode = Setting("preset_mode", "INTERVAL")
     /** Seconds per preset in INTERVAL mode (20-120). */
@@ -110,6 +114,8 @@ object Prefs {
 
     // Library browser state, remembered between launches.
     val libraryCategory = Setting("lib_category", "ALBUMS")
+    /** The Settings tab last open (Music library, Artists, ...; [com.dualamp.ui.library.SettingsTab]). */
+    val settingsTab = Setting("settings_tab", "LIBRARY")
     val viewModes = Setting("lib_view_modes", "")
     // Theme (see AppTheme): names of the chosen colors.
     val themeBackground = Setting("theme_background", "Dark")
@@ -157,25 +163,63 @@ object Prefs {
 
     // Lyrics on the player (the lyrics button, or double-click the right stick, R3).
     val lyricsOn = Setting("lyrics_on", false)
+    /** Lyrics on the bottom screen's now-playing view (while it is open) instead of over the visualizer. */
+    val lyricsOnBottom = Setting("lyrics_on_bottom", false)
     /** Darkness of the box behind the lyrics over the visualizer, 0-100 %. */
     val lyricsBackdrop = Setting("lyrics_backdrop", 55)
     /** Timed lyrics: positive shows each line sooner, negative later (ms). */
     val lyricsOffsetMs = Setting("lyrics_offset_ms", 0)
     /** Look up lyrics on lrclib.net for songs without a .lrc file or lyrics in their tags. */
     val lyricsOnline = Setting("lyrics_online", true)
+    /** Look for pictures of artists online (on Wi-Fi). Off until turned on. */
+    val fetchArtistArt = Setting("fetch_artist_art", false)
+    /** The first-launch question about [fetchArtistArt] has been asked. */
+    val artistArtAsked = Setting("artist_art_asked", false)
+    /** The bottom screen's now-playing view shows the album art (blurred) behind it. */
+    val playerArtBackground = Setting("player_art_bg", false)
+    /** How much the panel behind the text and buttons darkens that background, 0-100 %. */
+    val playerArtDim = Setting("player_art_dim", 55)
+    /** How blurred the album art behind the bottom screen player is (dp of blur, 0: sharp). */
+    val playerArtBlur = Setting("player_art_blur", 28)
+    /** The bottom screen player's progress bar drawn as the song's waveform, like the top screen's. */
+    val playerWaveform = Setting("player_waveform", false)
+    /** Both screens: the mini player at the bottom of the bottom screen (tap it for the bigger now-playing view). */
+    val miniPlayer = Setting("mini_player", true)
 
     // Last queue, restored on the next launch.
     val queueIds = Setting("queue_ids", "")
     val queueIndex = Setting("queue_index", 0)
     val queuePositionMs = Setting("queue_pos", 0)
+    /** The queue is a playlist: it starts over when it ends (instead of Autoplay). */
+    val queueFromPlaylist = Setting("queue_playlist", false)
+    /** The playlist playing in mix mode (its transitions play), or "" (see [com.dualamp.mix.MixEngine]). */
+    val mixPlaylistId = Setting("mix_playlist", "")
+    // The mix editor's sliders (only while it is open; see com.dualamp.mix.MixEditor).
+    val mixEdStart = Setting("mixed_start", 0)
+    val mixEdEntry = Setting("mixed_entry", 0)
+    val mixEdEq = List(6) { Setting("mixed_eq$it", 0) }
+    /** Mix editor: what moving song 1 or 2 (dragging or left / right) snaps to: "OFF", "BEATS" or "BARS". */
+    val mixSnap = Setting("mix_snap", "BEATS")
+    /** When an album, artist or list of songs ends, keep playing similar songs. */
+    val autoplay = Setting("autoplay", true)
+    /** The Artists tab lists album artists only (featured artists still have pages, found by search). */
+    val albumArtistsOnly = Setting("album_artists_only", false)
+    /** Years tab: the years grouped into decades (1990s, 2000s...) instead of every year. */
+    val yearsByDecade = Setting("years_by_decade", false)
+    /** Playlists tab: ALL, MINE (made in DualAmp) or FILES (playlist files like .m3u). */
+    val playlistsShow = Setting("playlists_show", "ALL")
+    /** The one-time switch of playlist sorting to Album artist (1.6) is done. */
+    val playlistSortV2 = Setting("playlist_sort_v2", false)
+    /** Artists left out of the Artists tab, one name per line ([com.dualamp.library.HiddenArtists]). */
+    val hiddenArtists = Setting("hidden_artists", "")
 
     private val all = listOf(
         musicFolders, serverUrl, showPlaylistFiles, infoBackdrop, vizEnabled, lidButtons, orientation, showControlsAtLaunch, onboardingDone,
         dspEnabled, dspPreamp, dspBass, dspTreble, dspBalance, dspWidth, dspMono, dspLimiter,
-        screens, swapScreens, overlayTimeoutSec, presetMode, presetDurationSec, vizReactivity, activeVizFolder, shufflePresets, l2Random, hardCuts,
-        vizQuality, vizFpsCap, showPresetName, libraryCategory, viewModes, themeBackground, themeText, themeSubText, themeAccent, themeIcon, coverGlowColor, coverGlowShape, coverGlowAnim, launchViewRoot, launchViewPage, coverGlowOpacity, gridColumns, gridColumnsSingle, singleSwap, singleLayout, tabsPosition, sameViewEverywhere, sortModes,
-        lyricsOn, lyricsBackdrop, lyricsOffsetMs, lyricsOnline, vizStream, splitArtists, artistSeparators, artistKeep, artistsFromTitles, separateLeaks, editTags,
-        queueIds, queueIndex, queuePositionMs, vizSource, artStyle, artCycleStyles, artFineBands,
+        screens, swapScreens, overlayTimeoutSec, uninterruptedViz, songChangeNote, presetMode, presetDurationSec, vizReactivity, activeVizFolder, shufflePresets, l2Random, hardCuts,
+        vizQuality, vizFpsCap, showPresetName, libraryCategory, settingsTab, viewModes, themeBackground, themeText, themeSubText, themeAccent, themeIcon, coverGlowColor, coverGlowShape, coverGlowAnim, launchViewRoot, launchViewPage, coverGlowOpacity, gridColumns, gridColumnsSingle, singleSwap, singleLayout, tabsPosition, sameViewEverywhere, sortModes,
+        lyricsOn, lyricsOnBottom, lyricsBackdrop, lyricsOffsetMs, lyricsOnline, fetchArtistArt, artistArtAsked, playerArtBackground, playerArtDim, playerArtBlur, playerWaveform, miniPlayer, vizStream, splitArtists, artistSeparators, artistKeep, artistsFromTitles, separateLeaks, editTags,
+        queueIds, queueIndex, queuePositionMs, queueFromPlaylist, mixPlaylistId, mixSnap, autoplay, albumArtistsOnly, yearsByDecade, playlistsShow, playlistSortV2, hiddenArtists,vizSource, artStyle, artCycleStyles, artFineBands,
     ) + eqBands + artParams
 
     fun init(context: Context) {

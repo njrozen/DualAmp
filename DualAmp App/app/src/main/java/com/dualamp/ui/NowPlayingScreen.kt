@@ -8,6 +8,7 @@ import com.dualamp.ui.library.Page
 import com.dualamp.ui.library.LibraryNav
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
@@ -32,6 +33,9 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CheckBox
+import androidx.compose.material.icons.rounded.CheckBoxOutlineBlank
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.widthIn
@@ -145,6 +149,9 @@ fun NowPlayingScreen(modifier: Modifier = Modifier, onClose: (() -> Unit)? = nul
     CompositionLocalProvider(LocalClosePlayer provides onClose) {
         Box(modifier) {
             NowPlayingScreenBody(Modifier.fillMaxSize())
+            // Mix editor open: this screen shows the two songs' waveforms (the settings are on the library side).
+            val mixing = com.dualamp.mix.MixEditor.session.collectAsState().value != null
+            if (mixing && onClose == null) MixWaveformView(Modifier.fillMaxSize().then(Modifier.background(Color(0xFF111111))))
             // Always there (also while the song info has faded to the visualizer).
             if (onClose != null) IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopStart).padding(4.dp)
                 .background(Color.Black.copy(alpha = 0.35f), CircleShape)) {
@@ -173,14 +180,28 @@ private fun NowPlayingScreenBody(modifier: Modifier) {
     // Only fade to the visualizer while music plays and a preset is running.
     val vizOn by Prefs.vizEnabled.state.collectAsState()
     val canFade = vizOn && player.isPlaying && preset != null && vizMenuOpen.value == VizMenu.NONE
-    LaunchedEffect(canFade) { if (!canFade) wake() }
+    // Settings > Uninterrupted visualizer: a new song leaves the visualizer alone.
+    val uninterrupted by Prefs.uninterruptedViz.state.collectAsState()
+    var songChangedAt by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(player.songId) {
+        songChangedAt = System.currentTimeMillis()
+        if (!uninterrupted || overlayVisible) wake()
+    }
+    LaunchedEffect(canFade) {
+        if (canFade) return@LaunchedEffect
+        // Changing songs can stop playback (or the preset) for a moment; only a pause that lasts brings the info back.
+        if (uninterrupted && !overlayVisible) {
+            delay(700)
+            if (System.currentTimeMillis() - songChangedAt < 3000) delay(1500)
+        }
+        wake()
+    }
     LaunchedEffect(lastTouch, overlayVisible, timeoutSec, canFade) {
         if (overlayVisible && timeoutSec > 2 && canFade) {
             delay(timeoutSec * 1000L)
             overlayVisible = false
         }
     }
-    LaunchedEffect(player.songId) { wake() }
     LaunchedEffect(Unit) {
         VizControl.overlayRequests.collect { req ->
             if (req == VizControl.OverlayRequest.TOGGLE && overlayVisible) overlayVisible = false else wake()
@@ -205,11 +226,18 @@ private fun NowPlayingScreenBody(modifier: Modifier) {
         else if (song != null) AlbumArt(song.albumId, song.id, Modifier.fillMaxSize().blur(40.dp), shape = RoundedCornerShape(0.dp))
         GestureLayer(onTap = { if (overlayVisible) overlayVisible = false else wake() })
         PresetToast(overlayVisible)
+        if (uninterrupted && song != null) SongToast(song, library?.albumById?.get(song.albumId)?.isSingle == true, overlayVisible)
 
         // Lyrics (the lyrics button, or double-click the right stick, R3): over the visualizer, and in the song info while it shows.
         val lyricsOn by Prefs.lyricsOn.state.collectAsState()
+        // Lyrics shown in the bottom screen's now-playing view leave this screen while it is open.
+        val bottomPlayerOpen by com.dualamp.ui.library.BottomPlayer.open.collectAsState()
+        val lyricsBottomPref by Prefs.lyricsOnBottom.state.collectAsState()
+        val lyricsOnBottom = bottomPlayerOpen && lyricsBottomPref
         val context = LocalContext.current
-        val lyricsState by produceState<LyricsState>(LyricsState.Off, song?.id, lyricsOn) {
+        // Also again after a song's lyrics changed (Remove lyrics, Delete .lrc file).
+        val lyricsRevision by LyricsRepository.revision.collectAsState()
+        val lyricsState by produceState<LyricsState>(LyricsState.Off, song?.id, lyricsOn, lyricsRevision) {
             value = if (!lyricsOn || song == null) LyricsState.Off else {
                 value = LyricsState.Loading
                 LyricsRepository.load(context, song)?.let { LyricsState.Found(it) } ?: LyricsState.None
@@ -222,7 +250,7 @@ private fun NowPlayingScreenBody(modifier: Modifier) {
             while (lyrics != null) { lyricsPos = PlayerConnection.positionMs; delay(100) }
         }
         val lyricIndex = lyrics?.indexAt(lyricsPos + lyricsOffset, player.durationMs) ?: -1
-        LyricsOverVisualizer(lyricsState, lyricIndex, visible = lyricsOn && !overlayVisible)
+        LyricsOverVisualizer(lyricsState, lyricIndex, visible = lyricsOn && !overlayVisible && !lyricsOnBottom)
 
         AnimatedVisibility(
             visible = overlayVisible,
@@ -232,7 +260,7 @@ private fun NowPlayingScreenBody(modifier: Modifier) {
             Overlay(song, player.isPlaying, player.durationMs, player.shuffle, player.repeatMode,
                 queuePos = if (player.queue.isEmpty()) null else player.queueIndex + 1 to player.queue.size,
                 lyricsState = lyricsState,
-                lyric = lyrics?.takeIf { lyricIndex >= 0 }?.let { l -> lyricLine(l, lyricIndex) to lyricText(l, lyricIndex + 1) })
+                lyric = lyrics?.takeIf { lyricIndex >= 0 && !lyricsOnBottom }?.let { l -> lyricLine(l, lyricIndex) to lyricText(l, lyricIndex + 1) })
         }
     }
 }
@@ -290,6 +318,40 @@ private fun GestureLayer(onTap: () -> Unit) {
                 )
             }
     )
+}
+
+/**
+ * Uninterrupted visualizer with Settings > Show the new song: when the song changes while the song info is hidden, its
+ * title and album (just the title for a single), and its artists below, show top left for a moment.
+ */
+@Composable
+private fun SongToast(song: Song, single: Boolean, overlayVisible: Boolean) {
+    val show by Prefs.songChangeNote.state.collectAsState()
+    var visible by remember { mutableStateOf(false) }
+    var first by remember { mutableStateOf(true) }
+    LaunchedEffect(song.id) {
+        // Not for the song already playing when the player opens.
+        if (first) { first = false; return@LaunchedEffect }
+        visible = true
+        delay(4000)
+        visible = false
+    }
+    Box(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp), contentAlignment = Alignment.TopStart) {
+        AnimatedVisibility(show && visible && !overlayVisible, enter = fadeIn(), exit = fadeOut(tween(800))) {
+            Column(
+                Modifier.widthIn(max = 520.dp).background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    if (single || song.album.isBlank()) song.title else "${song.title} · ${song.album}",
+                    color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.titleSmall, maxLines = 1,
+                    modifier = Modifier.scrollIfLong(),
+                )
+                Text(song.artist, color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelLarge, maxLines = 1,
+                    modifier = Modifier.scrollIfLong())
+            }
+        }
+    }
 }
 
 /** Shows the preset name for a moment, top right (where it sits in the song info), when it changes while the info is hidden. */
@@ -692,6 +754,20 @@ private fun SongMenu(song: Song) {
             onClick = { LibraryNav.open(Page.AlbumPage(song.albumId)); close() })
         DropdownMenuItem(text = { Text("Go to artist") }, leadingIcon = { Icon(Icons.Rounded.Person, null) },
             onClick = { LibraryNav.open(Page.ArtistPage(song.primaryArtist)); close() })
+        // Its .lrc file has the wrong lyrics: delete it (the library screen asks first).
+        val hasLrc = androidx.compose.runtime.produceState(false, song.id) {
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.dualamp.library.LyricsRepository.lrcPath(context, song) != null }
+        }.value
+        if (hasLrc) DropdownMenuItem(text = { Text("Delete .lrc file (wrong lyrics)") }, leadingIcon = { Icon(androidx.compose.material.icons.Icons.Rounded.Delete, null) },
+            onClick = { LibraryNav.deleteLrc(song); close() })
+        // Lyrics stored in the song itself: take them out (the library screen asks first).
+        val inTags = androidx.compose.runtime.produceState(false, song.id) {
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.dualamp.library.TagEditor.canEdit(song) && com.dualamp.library.LyricsRepository.inTags(context, song)
+            }
+        }.value
+        if (inTags) DropdownMenuItem(text = { Text("Remove lyrics from the song") }, leadingIcon = { Icon(androidx.compose.material.icons.Icons.Rounded.Delete, null) },
+            onClick = { LibraryNav.removeLyrics(song); close() })
     }
     PlaylistMenu(song, VizMenu.SONG_PLAYLIST)
     if (vizMenuOpen.value == VizMenu.SONG_NEW_PLAYLIST) {
@@ -718,15 +794,32 @@ private fun PlaylistMenu(song: Song, which: VizMenu) {
     val playlists by PlaylistStore.playlists.collectAsState()
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
     fun close() { vizMenuOpen.value = VizMenu.NONE }
+    // Tick any number of playlists, then Add (like the library's Add to playlist).
+    val ticked = remember(song.id, vizMenuOpen.value == which) { androidx.compose.runtime.mutableStateListOf<String>() }
     DropdownMenu(expanded = vizMenuOpen.value == which, onDismissRequest = ::close) {
-        Text("Add to playlist", color = TopDim, style = MaterialTheme.typography.labelMedium,
+        Text("Add to playlists", color = TopDim, style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+        DropdownMenuItem(
+            text = { Text(when (ticked.size) { 0 -> "Tick playlists below, then add"; 1 -> "Add to 1 playlist"; else -> "Add to ${ticked.size} playlists" }) },
+            leadingIcon = { Icon(Icons.Rounded.Check, null) },
+            enabled = ticked.isNotEmpty(),
+            onClick = {
+                val chosen = playlists.filter { it.id in ticked }
+                chosen.forEach { PlaylistStore.add(it.id, listOf(song.id)) }
+                toast(if (chosen.size == 1) "Added to ${chosen[0].name}" else "Added to ${chosen.size} playlists")
+                close()
+            })
         DropdownMenuItem(text = { Text("New playlist…") }, leadingIcon = { Icon(Icons.Rounded.Add, null) },
             onClick = { vizMenuOpen.value = VizMenu.SONG_NEW_PLAYLIST })
         playlists.forEach { p ->
+            val on = p.id in ticked
             DropdownMenuItem(text = { Text(p.name) },
-                leadingIcon = { Icon(if (p.id == PlaylistStore.LIKED_ID) Icons.Rounded.Favorite else Icons.AutoMirrored.Rounded.QueueMusic, null) },
-                onClick = { PlaylistStore.add(p.id, listOf(song.id)); toast("Added to ${p.name}"); close() })
+                leadingIcon = {
+                    Icon(if (on) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank, null,
+                        tint = if (on) com.dualamp.ui.Accent else LocalContentColor.current)
+                },
+                trailingIcon = { Icon(if (p.id == PlaylistStore.LIKED_ID) Icons.Rounded.Favorite else Icons.AutoMirrored.Rounded.QueueMusic, null, tint = TopDim) },
+                onClick = { if (on) ticked.remove(p.id) else ticked.add(p.id) })
         }
     }
 }
@@ -942,12 +1035,14 @@ private fun Controls(song: Song?, isPlaying: Boolean, shuffle: Boolean, repeatMo
  * Shows a flat line until the waveform has been read (a second or two for a new song).
  */
 @Composable
-private fun WaveformBar(
+internal fun WaveformBar(
     song: Song?,
     fraction: Float,
     onDrag: (Float) -> Unit,
     onRelease: () -> Unit,
     modifier: Modifier,
+    // The played part; the rest is the same, dimmer (the bottom screen passes its theme's text color).
+    played: Color = Color.White,
 ) {
     val context = LocalContext.current
     val bars by produceState(song?.let { Waveform.cached(it.id) }, song?.id) {
@@ -991,7 +1086,7 @@ private fun WaveformBar(
         for (i in 0 until count) {
             val x = i * slot + slot / 2f
             val h = level(i) * size.height
-            val color = if (x <= playedX) Color.White else Color.White.copy(alpha = 0.3f)
+            val color = if (x <= playedX) played else played.copy(alpha = 0.3f)
             drawLine(color, Offset(x, mid - h / 2f), Offset(x, mid + h / 2f), strokeWidth = barWidth, cap = StrokeCap.Round)
         }
         // Playhead.

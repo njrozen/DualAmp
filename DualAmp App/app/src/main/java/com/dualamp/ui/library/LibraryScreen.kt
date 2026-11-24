@@ -6,6 +6,14 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.SideEffect
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.CheckBox
+import androidx.compose.material.icons.rounded.CheckBoxOutlineBlank
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.HideImage
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import android.Manifest
 import android.widget.Toast
@@ -165,6 +173,8 @@ private class StackEntry(val page: Page) {
     val grid = LazyGridState()
     val flow = LazyListState()
     var cursor by mutableIntStateOf(0)
+    /** Cover Flow: the cover you were on before going up to its buttons (Shuffle...), to come back to. */
+    var lastCover = -1
 }
 
 private class PendingVizFolder(val preset: PresetManager.Preset?)
@@ -173,14 +183,37 @@ private class PendingVizFolder(val preset: PresetManager.Preset?)
 /** [exact]: the text as typed, spaces included, and blank allowed (separators). */
 private class RenamePrompt(val title: String, val current: String, val confirm: String = "Rename", val exact: Boolean = false, val onRename: (String) -> Unit)
 
-private class MenuOption(val label: String, val icon: ImageVector, val run: () -> Unit)
+/**
+ * A menu row. With [checkKey] it is a check box (several can be ticked; picking it ticks or unticks it and the menu
+ * stays open). [labelOf]: a label that follows the menu (e.g. "Add to 2 playlists").
+ */
+private class MenuOption(
+    val label: String, val icon: ImageVector, val checkKey: String? = null,
+    val labelOf: ((MenuState) -> String)? = null, val run: () -> Unit,
+)
 
 /** Edit song info's Save: [start] checks and asks for permission, [write] saves (filled in by the library screen). */
 private class TagSaveSteps {
     var start: () -> Unit = {}
     var write: () -> Unit = {}
+    var edit: (List<Song>) -> Unit = {}
+    /** Delete the songs' .lrc files (after asking); [deleteLrcNow] does it, asking Android if needed. */
+    var deleteLrc: (List<Song>) -> Unit = {}
+    var deleteLrcNow: () -> Unit = {}
+    /** The songs whose .lrc files are being deleted, while Android asks. */
+    var lrcSongs: List<Song> = emptyList()
+    /** Take the lyrics out of the songs' own tags (after asking). */
+    var removeLyrics: (List<Song>) -> Unit = {}
 }
 private class MenuState(val title: String, val options: List<MenuOption>) {
+    /** Ticked check boxes ([MenuOption.checkKey]). */
+    val checked = androidx.compose.runtime.mutableStateListOf<String>()
+    /** Picks [opt]: a check box ticks / unticks (true: the menu stays open); anything else runs. */
+    fun toggle(opt: MenuOption): Boolean {
+        val k = opt.checkKey ?: return false
+        if (k in checked) checked.remove(k) else checked.add(k)
+        return true
+    }
     var cursor by mutableIntStateOf(0)
 }
 
@@ -312,10 +345,73 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
             if (picked != null) com.dualamp.library.TagEditor.setCover(picked)
         }
     }
+    // Your own picture for an artist, from your photos.
+    var artistPicFor by remember { mutableStateOf<String?>(null) }
+    val artistPicLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        val name = artistPicFor
+        if (uri != null && name != null) scope.launch {
+            val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+            }
+            val ok = bytes != null && com.dualamp.library.ArtistImages.setCustom(name, bytes)
+            Toast.makeText(context, if (ok) "New picture for $name" else "Couldn't use that picture", Toast.LENGTH_SHORT).show()
+        }
+    }
+    fun pickArtistPicture(name: String) { artistPicFor = name; AppEvents.markOwnLaunch(); artistPicLauncher.launch("image/*") }
+    // Your own picture for a playlist, from your photos.
+    var playlistPicFor by remember { mutableStateOf<com.dualamp.library.Playlist?>(null) }
+    val playlistPicLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        val p = playlistPicFor
+        if (uri != null && p != null) scope.launch {
+            val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+            }
+            val ok = bytes != null && com.dualamp.library.ArtistImages.setPlaylistPicture(p.id, bytes)
+            Toast.makeText(context, if (ok) "New picture for ${p.name}" else "Couldn't use that picture", Toast.LENGTH_SHORT).show()
+        }
+    }
+    fun pickPlaylistPicture(p: com.dualamp.library.Playlist) { playlistPicFor = p; AppEvents.markOwnLaunch(); playlistPicLauncher.launch("image/*") }
     // Android's "allow DualAmp to modify this audio file?".
     val writeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
         if (r.resultCode == android.app.Activity.RESULT_OK) tagSave.write()
         else Toast.makeText(context, "Not saved: DualAmp wasn't allowed to change the file", Toast.LENGTH_SHORT).show()
+    }
+    // Adding to a playlist file (.m3u...): Android's "allow DualAmp to modify this playlist?", then the songs go in.
+    var playlistFileAdd by remember { mutableStateOf<Pair<List<com.dualamp.library.Playlist>, List<Song>>?>(null) }
+    fun addToPlaylistFile(p: com.dualamp.library.Playlist, songs: List<Song>) = scope.launch {
+        val local = com.dualamp.library.PlaylistFiles.addable(songs)
+        if (local.isEmpty()) { Toast.makeText(context, "Only songs on this device can go in a playlist file", Toast.LENGTH_SHORT).show(); return@launch }
+        com.dualamp.library.PlaylistFiles.add(context, p, local)
+            .onSuccess { n ->
+                Toast.makeText(context, when {
+                    n == 0 -> "Already in ${p.name}"
+                    local.size < songs.size -> "Added $n to ${p.name} (songs from the PC can't go in a playlist file)"
+                    else -> "Added to ${p.name}"
+                }, Toast.LENGTH_SHORT).show()
+            }
+            .onFailure { Toast.makeText(context, "Couldn't add to ${p.name}: ${it.message ?: it.javaClass.simpleName}", Toast.LENGTH_SHORT).show() }
+    }
+    val playlistFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
+        val pending = playlistFileAdd
+        playlistFileAdd = null
+        if (r.resultCode == android.app.Activity.RESULT_OK && pending != null) pending.first.forEach { addToPlaylistFile(it, pending.second) }
+        else Toast.makeText(context, "Not added: DualAmp wasn't allowed to change the playlist file", Toast.LENGTH_SHORT).show()
+    }
+    // Delete .lrc file: Android's "allow DualAmp to delete...?", or (when Android won't list the file) the song's folder
+    // given to DualAmp once, after which DualAmp deletes it itself.
+    val lrcDeleteLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
+        if (r.resultCode == android.app.Activity.RESULT_OK) {
+            tagSave.lrcSongs.forEach(com.dualamp.library.LyricsRepository::forget)
+            Toast.makeText(context, "Deleted", Toast.LENGTH_SHORT).show()
+        } else Toast.makeText(context, "Not deleted", Toast.LENGTH_SHORT).show()
+    }
+    val lrcFolderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) { Toast.makeText(context, "Not deleted", Toast.LENGTH_SHORT).show(); return@rememberLauncherForActivityResult }
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(uri,
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+        tagSave.deleteLrcNow()
     }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         LibraryRepository.refresh()
@@ -385,7 +481,12 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
             showHelp = { helpDontShow = !Prefs.showControlsAtLaunch.value; helpOpen = true },
             askText = { title, current, confirm, done -> renamePrompt = RenamePrompt(title, current, confirm, exact = true, onRename = done) },
             pickCover = { AppEvents.markOwnLaunch(); coverLauncher.launch("image/*") },
+            pickArtistPicture = { pickArtistPicture(it) },
             saveTags = { tagSave.start() },
+            editSongs = { tagSave.edit(it) },
+            deleteLrc = { tagSave.deleteLrc(it) },
+            confirm = { q, yes, run -> menu = MenuState(q, listOf(MenuOption(yes, Icons.Rounded.Check) { run() }, MenuOption("Cancel", Icons.Rounded.Close) {})) },
+            toast = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() },
             openAccessibility = {
                 AppEvents.markOwnLaunch()
                 context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -401,9 +502,11 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
                 if (LibraryRepository.musicFolders.isEmpty()) add(Onboarding.FOLDER)
                 if (!com.dualamp.input.SleepKeysService.isEnabled(context)) add(Onboarding.ACCESSIBILITY)
             }
+            if (!Prefs.artistArtAsked.value) add(Onboarding.ARTIST_ART)
         }
     }
     fun nextOnboarding() {
+        if (onboarding.firstOrNull() == Onboarding.ARTIST_ART) Prefs.artistArtAsked.value = true
         if (onboarding.isNotEmpty()) onboarding.removeAt(0)
         if (onboarding.isEmpty()) Prefs.onboardingDone.value = true
     }
@@ -411,6 +514,7 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
         when (onboarding.firstOrNull()) {
             Onboarding.FOLDER -> run { AppEvents.markOwnLaunch(); folderLauncher.launch(null) }
             Onboarding.ACCESSIBILITY -> actions.openAccessibility()
+            Onboarding.ARTIST_ART -> { Prefs.fetchArtistArt.value = true; com.dualamp.library.ArtistImages.retryMissing() }
             null -> Unit
         }
         nextOnboarding()
@@ -426,7 +530,7 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
     LaunchedEffect(searchKb?.text) {
         val text = searchKb?.text ?: return@LaunchedEffect
         val t = stack.lastOrNull()?.page
-        if (t is Page.Search && t.query != text) stack[stack.lastIndex] = StackEntry(Page.Search(text))
+        if (t is Page.Search && t.query != text) stack[stack.lastIndex] = StackEntry(t.copy(query = text))
     }
     SideEffect { ControllerBus.textInput = (keyboardOpen && onSearch) || openPrompt.value != null }
 
@@ -435,7 +539,8 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
     val sortSpec = Prefs.mapGet(Prefs.sortModes, typeKey)
     val chosenSort = sortSpec?.substringBefore(':')?.let { runCatching { Sort.valueOf(it) }.getOrNull() }
     val desc = sortSpec?.endsWith(":desc") == true
-    val queueKey = if (top.page == Page.Root(Category.QUEUE)) player else null
+    val autoplayOn by Prefs.autoplay.state.collectAsState()
+    val queueKey = if (top.page == Page.Root(Category.QUEUE)) listOf(player, autoplayOn) else null
     val vizPage = top.page == Page.Presets || top.page is Page.PresetCategory || top.page is Page.VizFolderPage
     val vizSource by Prefs.vizSource.state.collectAsState()
     val presetKey = if (vizPage) listOf(presets, currentPreset, vizFolders, activeVizFolder, vizSource) else null
@@ -454,10 +559,62 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
     // The PC music rows say whether the PC is connected.
     val pcLink by com.dualamp.library.RemoteLibrary.connection.collectAsState()
     val tagSession = com.dualamp.library.TagEditor.session
-    val data = remember(lib, tab, playlists, top.page, sortModes, settingsTick, queueKey, presetKey, settingsKey, musicFolders, pcLink, tagSession) {
-        lib?.let { buildPage(top.page, it, playlists, player, chosenSort, desc, actions) }
+    // Hiding an artist (or showing it again) redraws the Artists tab and the Hidden artists list.
+    val hiddenArtists by Prefs.hiddenArtists.state.collectAsState()
+    // Years tab: every year, or grouped by decade.
+    val yearsByDecade by Prefs.yearsByDecade.state.collectAsState()
+    // Settings: the tab open (Music library, Artists...).
+    val settingsTabName by Prefs.settingsTab.state.collectAsState()
+    // Playlists tab: all, yours, or playlist files.
+    val playlistsShow by Prefs.playlistsShow.state.collectAsState()
+    // Both screens: the bottom screen's mini player (Settings > Now playing).
+    val miniPlayerOn by Prefs.miniPlayer.state.collectAsState()
+    // Mix mode: the mix editor's changes, and each song's tempo and key as they are read.
+    val mixSession by com.dualamp.mix.MixEditor.session.collectAsState()
+    // One screen, mix editor: touching the waveforms or customizing a curve makes the waveforms bigger, and only the
+    // rows that go with it stay below (Show all settings, or B, brings the rest back).
+    val mixEditing by com.dualamp.mix.MixEditor.editing.collectAsState()
+    val mixTapped by com.dualamp.mix.MixEditor.expanded.collectAsState()
+    val mixFocus: Set<String>? = if (top.page !is Page.MixEdit || !singleScreenLayout || mixSession == null) null else when (mixEditing) {
+        null -> if (mixTapped) setOf("mixed:snap", "mixed:start", "mixed:entry", "act:mixsave") else null
+        else -> setOf(when (mixEditing) {
+            com.dualamp.mix.CurveKind.VOLUME -> "mixed:volume"
+            com.dualamp.mix.CurveKind.FILTER -> "mixed:filter"
+            com.dualamp.mix.CurveKind.EFFECT -> "mixed:effect"
+            else -> "mixed:eq"
+        }, "mixed:draw", "act:mixsave") // (undo / redo are on the waveforms while customizing)
     }
-    val fixedList = top.page == Page.Settings || top.page == Page.PcMusic || top.page == Page.MusicFolders || top.page is Page.ArtistSplitList || top.page == Page.Dsp || top.page == Page.Controls || vizPage || top.page == Page.Root(Category.QUEUE) || top.page is Page.Search
+    // A new set of rows: the cursor starts at the top (Show all settings).
+    LaunchedEffect(mixFocus) { if (top.page is Page.MixEdit) { top.cursor = 0; runCatching { top.list.scrollToItem(0); top.grid.scrollToItem(0) } } }
+    // 1.6: playlists sort by album artist by default (albums with various artists stay together); a sort chosen before
+    // that is switched over once.
+    LaunchedEffect(Unit) {
+        if (!Prefs.playlistSortV2.value) { Prefs.mapPut(Prefs.sortModes, "playlist", "ALBUM_ARTIST:asc"); Prefs.playlistSortV2.value = true }
+    }
+    val mixPlaylist = (top.page as? Page.PlaylistPage)?.let { pp -> playlists.firstOrNull { it.id == pp.id } }?.takeIf { it.mixMode && !it.readOnly }
+    val mixAnalysis = if (top.page is Page.MixEdit || mixPlaylist != null) com.dualamp.mix.SongAnalyzer.results.collectAsState().value else null
+    val mixEqKey = if (top.page is Page.MixEdit) (listOf(Prefs.mixEdStart, Prefs.mixEdEntry) + Prefs.mixEdEq).map { it.state.collectAsState().value } else null
+    LaunchedEffect(top.page) {
+        // The mix editor holds its transition while its page is open.
+        val pg = top.page
+        if (pg is Page.MixEdit) {
+            val s = com.dualamp.mix.MixEditor.session.value
+            if (s == null || s.playlistId != pg.playlistId || s.from.id != pg.fromId || s.to.id != pg.toId) {
+                val l = LibraryRepository.library.value
+                val from = l?.songById?.get(pg.fromId); val to = l?.songById?.get(pg.toId)
+                if (from != null && to != null) com.dualamp.mix.MixEditor.open(pg.playlistId, from, to)
+            }
+        } else if (com.dualamp.mix.MixEditor.session.value != null) com.dualamp.mix.MixEditor.close()
+    }
+    val data = remember(lib, tab, playlists, top.page, sortModes, settingsTick, queueKey, presetKey, settingsKey, musicFolders, pcLink, tagSession, hiddenArtists, yearsByDecade, settingsTabName, playlistsShow,
+        mixSession, mixAnalysis, mixEqKey, mixFocus) {
+        lib?.let { buildPage(top.page, it, playlists, player, chosenSort, desc, actions).withUniqueKeys() }?.let { d ->
+            if (mixFocus == null) d else d.copy(entries = listOf(actionEntry("act:mixall", "Show all settings", Icons.Rounded.ExpandMore,
+                "Back to every setting, and smaller waveforms (B does the same)") { com.dualamp.mix.MixEditor.collapse() }) +
+                d.entries.filter { it.key in mixFocus })
+        }
+    }
+    val fixedList = top.page is Page.MixEdit || mixPlaylist != null || top.page == Page.Settings || top.page == Page.PcMusic || top.page == Page.MusicFolders || top.page is Page.ArtistSplitList || top.page == Page.HiddenArtistList || top.page == Page.Dsp || top.page == Page.Controls || vizPage || top.page == Page.Root(Category.QUEUE) || top.page is Page.Search
     // One view for the library categories and one for the pages inside them (artist, album, playlist...),
     // or the same for both (Settings > Library view). Grid unless changed.
     val rootPage = top.page is Page.Root
@@ -476,6 +633,7 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
         }
         tab = if (onPc) BottomTab.PC else BottomTab.LIBRARY
         stacks.getValue(tab).add(StackEntry(page))
+        BottomPlayer.close()
     }
 
     fun push(page: Page) {
@@ -501,9 +659,22 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
     fun back(): Boolean {
         if (menu != null) { menu = null; return true }
         if (selection.isNotEmpty()) { clearSelection(); return true }
+        // Mix editor with its waveforms made bigger: first back to all the settings.
+        if (stack.last().page is Page.MixEdit && singleScreenLayout && (com.dualamp.mix.MixEditor.expanded.value || com.dualamp.mix.MixEditor.editing.value != null)) {
+            com.dualamp.mix.MixEditor.collapse(); return true
+        }
         if (stack.size > 1) { stack.removeAt(stack.lastIndex); return true }
         if (!tab.inHeader) { tab = lastHeaderTab; return true }
         return false
+    }
+
+    /** Settings: open one of its tabs (Music library, Artists...), at the top. */
+    fun selectSettingsTab(t: SettingsTab) {
+        Prefs.settingsTab.value = t.name
+        stacks.getValue(BottomTab.SETTINGS).lastOrNull()?.takeIf { it.page == Page.Settings }?.let { e ->
+            e.cursor = 0
+            scope.launch { runCatching { e.list.scrollToItem(0); e.grid.scrollToItem(0) } }
+        }
     }
 
     fun selectCategory(c: Category) {
@@ -536,8 +707,10 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
             e.target != null -> push(e.target)
             e.song != null -> {
                 val idx = d.playable.indexOfFirst { it.id == e.song.id }
-                val collection = top.page is Page.AlbumPage || top.page is Page.PlaylistPage
-                if (idx >= 0) PlayerConnection.playSongs(d.playable, idx, fromCollection = collection) else PlayerConnection.playSongs(listOf(e.song))
+                val playlist = top.page is Page.PlaylistPage
+                // A playlist in mix mode plays as a mix from this song.
+                val mixId = mixPlaylist?.id
+                if (idx >= 0) PlayerConnection.playSongs(d.playable, idx, playlist = playlist, mixPlaylistId = mixId) else PlayerConnection.playSongs(listOf(e.song))
             }
         }
     }
@@ -548,9 +721,13 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
     tagSave.write = {
         val s = com.dualamp.library.TagEditor.session
         if (s != null) scope.launch {
-            toast("Saving…")
+            toast(if (s.multiple) "Saving ${s.songs.size} songs…" else "Saving…")
             com.dualamp.library.TagEditor.save(context, s)
-                .onSuccess { toast("Saved"); com.dualamp.library.TagEditor.session = null; back() }
+                .onSuccess {
+                    toast(if (s.multiple) "Saved ${s.songs.size} songs" else "Saved"); com.dualamp.library.TagEditor.session = null
+                    // Remove lyrics (from a song's menu) saves without the editor open: stay where you are.
+                    if (stack.last().page is Page.EditSong) back()
+                }
                 .onFailure { toast("Couldn't save: ${it.message ?: it.javaClass.simpleName}") }
         }
     }
@@ -558,27 +735,137 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
         val s = com.dualamp.library.TagEditor.session ?: return@start
         com.dualamp.library.TagEditor.problem(s.fields)?.let { toast(it); return@start }
         if (!s.changed) { toast("Nothing changed"); return@start }
-        if (com.dualamp.library.TagEditor.canWrite(context, s.song)) tagSave.write()
+        if (com.dualamp.library.TagEditor.canWrite(context, s.songs)) tagSave.write()
         else {
             AppEvents.markOwnLaunch()
-            writeLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(com.dualamp.library.TagEditor.writeRequest(context, s.song).intentSender).build())
+            writeLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(com.dualamp.library.TagEditor.writeRequest(context, s.songs).intentSender).build())
+        }
+    }
+    // Opens the editor for one song or several (an album, songs picked with Select multiple).
+    tagSave.edit = { songs ->
+        val local = songs.filter(com.dualamp.library.TagEditor::canEdit)
+        if (local.isEmpty()) toast("Only songs on this device can be edited")
+        else scope.launch {
+            clearSelection()
+            com.dualamp.library.TagEditor.start(context, local)
+            goTo(Page.EditSong(local.first().id))
         }
     }
     /** "Edit song info" in a song's menu (Settings > Music library > Edit song info; songs on this device only). */
     fun editInfo(s: Song): List<MenuOption> =
         if (!Prefs.editTags.value || !com.dualamp.library.TagEditor.canEdit(s)) emptyList()
-        else listOf(MenuOption("Edit song info", Icons.Rounded.Edit) { com.dualamp.library.TagEditor.start(s); goTo(Page.EditSong(s.id)) })
+        else listOf(MenuOption("Edit song info", Icons.Rounded.Edit) { tagSave.edit(listOf(s)) })
 
-    fun playlistChooser(songs: List<Song>): MenuState = MenuState(
-        "Add to playlist",
-        listOf(MenuOption("New playlist…", Icons.Rounded.Add) { newPlaylistSongs = songs }) +
-            playlists.map { p ->
-                MenuOption(p.name, if (p.id == PlaylistStore.LIKED_ID) Icons.Rounded.Favorite else Icons.AutoMirrored.Rounded.QueueMusic) {
-                    PlaylistStore.add(p.id, songs.map { it.id })
-                    toast("Added to ${p.name}")
+    // Delete .lrc file (wrong lyrics): asks first, then deletes; Android may ask too, or want the folder given once.
+    tagSave.deleteLrcNow = {
+        val songs = tagSave.lrcSongs
+        scope.launch {
+            val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.dualamp.library.LyricsRepository.deleteLrc(context, songs) }
+            when {
+                r.needConfirm.isNotEmpty() -> {
+                    AppEvents.markOwnLaunch()
+                    lrcDeleteLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(
+                        com.dualamp.library.LyricsRepository.deleteRequest(context, r.needConfirm).intentSender).build())
+                }
+                r.needFolder != null -> {
+                    toast("Android needs the song's folder: choose it, then \"Use this folder\" (asked once)")
+                    AppEvents.markOwnLaunch()
+                    lrcFolderLauncher.launch(folderDocUri(r.needFolder))
+                }
+                r.deleted > 0 -> toast(if (r.deleted == 1) "Deleted the .lrc file" else "Deleted ${r.deleted} .lrc files")
+                else -> toast("No .lrc file found")
+            }
+        }
+    }
+    tagSave.deleteLrc = { songs ->
+        val local = songs.filterNot { it.isRemote }
+        val name = local.singleOrNull()?.let { s -> s.path.substringAfterLast('/').substringBeforeLast('.') + ".lrc" }
+        menu = MenuState(if (name != null) "Delete $name? It can't be undone" else "Delete the .lrc files of ${local.size} songs? It can't be undone", listOf(
+            MenuOption("Yes, delete", Icons.Rounded.Delete) { tagSave.lrcSongs = local; tagSave.deleteLrcNow() },
+            MenuOption("Cancel", Icons.Rounded.Close) {},
+        ))
+    }
+    LaunchedEffect(Unit) { LibraryNav.deleteLrcRequests.collect { BigPlayer.open.value = false; tagSave.deleteLrc(listOf(it)) } }
+
+    /** "Delete .lrc file" for a song that has one next to it (its lyrics may be the wrong song's). */
+    fun deleteLrcOption(s: Song): List<MenuOption> =
+        if (s.isRemote || com.dualamp.library.LyricsRepository.lrcPath(context, s) == null) emptyList()
+        else listOf(MenuOption("Delete .lrc file (wrong lyrics)", Icons.Rounded.Delete) { tagSave.deleteLrc(listOf(s)) })
+
+    // Remove lyrics from the song: the lyrics stored in its own tags (Edit song info's "Remove lyrics", saved straight
+    // away). Asks first; Android may ask too, as when saving song info.
+    tagSave.removeLyrics = { songs ->
+        val local = songs.filter(com.dualamp.library.TagEditor::canEdit)
+        if (local.isNotEmpty()) menu = MenuState(
+            local.singleOrNull()?.let { "Remove the lyrics stored in \"${it.title}\"? A .lrc file next to it stays" }
+                ?: "Remove the lyrics stored in ${local.size} songs? Their .lrc files stay", listOf(
+            MenuOption("Yes, remove them", Icons.Rounded.Delete) {
+                scope.launch {
+                    com.dualamp.library.TagEditor.start(context, local)
+                    com.dualamp.library.TagEditor.session = com.dualamp.library.TagEditor.session?.copy(removeLyrics = true)
+                    tagSave.start()
                 }
             },
-    )
+            MenuOption("Cancel", Icons.Rounded.Close) {},
+        ))
+    }
+    LaunchedEffect(Unit) { LibraryNav.removeLyricsRequests.collect { BigPlayer.open.value = false; tagSave.removeLyrics(listOf(it)) } }
+
+    /** "Remove lyrics from the song" for a song on this device with lyrics in its tags. */
+    fun removeLyricsOption(s: Song): List<MenuOption> =
+        if (!com.dualamp.library.TagEditor.canEdit(s) || !com.dualamp.library.LyricsRepository.inTags(context, s)) emptyList()
+        else listOf(MenuOption("Remove lyrics from the song", Icons.Rounded.Close) { tagSave.removeLyrics(listOf(s)) })
+
+    /** The song's lyrics options: delete its .lrc file, remove the lyrics stored in it. */
+    fun lyricsOptions(s: Song): List<MenuOption> = deleteLrcOption(s) + removeLyricsOption(s)
+
+    /** "Edit info of N songs" for an album, artist, playlist... or the songs picked with Select multiple. */
+    fun editInfo(songs: List<Song>): List<MenuOption> {
+        val local = songs.filter(com.dualamp.library.TagEditor::canEdit)
+        if (!Prefs.editTags.value || local.size < 2) return if (local.size == 1) editInfo(local[0]) else emptyList()
+        return listOf(MenuOption("Edit info of ${local.size} songs", Icons.Rounded.Edit) { tagSave.edit(local) })
+    }
+
+    /**
+     * Add to playlist: tick any number of playlists (and playlist files), then "Add to N playlists". New playlist… makes
+     * one with the songs straight away.
+     */
+    fun playlistChooser(songs: List<Song>): MenuState {
+        val files = localLib?.devicePlaylists.orEmpty().filter(com.dualamp.library.PlaylistFiles::isFile)
+        var state: MenuState? = null
+        fun confirm() {
+            val ticked = state?.checked?.toList().orEmpty()
+            if (ticked.isEmpty()) { toast("Tick the playlists to add to first"); menu = state; return }
+            val mine = playlists.filter { it.id in ticked }
+            mine.forEach { PlaylistStore.add(it.id, songs.map { s -> s.id }) }
+            if (mine.isNotEmpty()) toast(if (mine.size == 1) "Added to ${mine[0].name}" else "Added to ${mine.size} playlists")
+            // Playlist files: the songs are written into each file; Android asks once for all that need it.
+            val chosenFiles = files.filter { it.id in ticked }
+            val ready = chosenFiles.filter { com.dualamp.library.PlaylistFiles.canWrite(context, it) }
+            ready.forEach { addToPlaylistFile(it, songs) }
+            val ask = chosenFiles - ready.toSet()
+            if (ask.isNotEmpty()) {
+                playlistFileAdd = ask to songs
+                AppEvents.markOwnLaunch()
+                playlistFileLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(
+                    com.dualamp.library.PlaylistFiles.writeRequest(context, ask).intentSender).build())
+            }
+        }
+        val title = if (songs.size == 1) "Add \"${songs[0].title}\" to playlists" else "Add ${songs.size} songs to playlists"
+        return MenuState(title,
+            listOf(
+                MenuOption("Add", Icons.Rounded.Check, labelOf = { m ->
+                    when (m.checked.size) { 0 -> "Tick playlists below, then add"; 1 -> "Add to 1 playlist"; else -> "Add to ${m.checked.size} playlists" }
+                }) { confirm() },
+                MenuOption("New playlist…", Icons.Rounded.Add) { newPlaylistSongs = songs },
+            ) +
+                playlists.map { p ->
+                    MenuOption(p.name, if (p.id == PlaylistStore.LIKED_ID) Icons.Rounded.Favorite else Icons.AutoMirrored.Rounded.QueueMusic, checkKey = p.id) {}
+                } +
+                // Playlist files (.m3u, .pls...) found in the music folders.
+                files.map { p -> MenuOption("${p.name} (playlist file)", Icons.Rounded.Description, checkKey = p.id) {} },
+        ).also { state = it }
+    }
 
     fun vizFolderChooser(preset: PresetManager.Preset): MenuState = MenuState(
         "Add to visualizer folder",
@@ -605,11 +892,12 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
             MenuOption("Add to playlist…", Icons.AutoMirrored.Rounded.PlaylistAdd) { menu = playlistChooser(listOf(s)) },
             MenuOption(if (liked) "Remove from Liked Songs" else "Add to Liked Songs",
                 if (liked) Icons.Rounded.FavoriteBorder else Icons.Rounded.Favorite) { PlaylistStore.toggleLike(s.id) },
-        ) + editInfo(s))
+        ) + editInfo(s) + lyricsOptions(s))
     }
 
     // The top screen can ask for a page (its art menu's Go to album / artist).
-    LaunchedEffect(Unit) { LibraryNav.requests.collect { goTo(it) } }
+    // In the single-screen tabs layout that menu is in the big player: close it, so the page shows.
+    LaunchedEffect(Unit) { LibraryNav.requests.collect { BigPlayer.open.value = false; goTo(it) } }
 
     fun menuFor(e: Entry): MenuState? {
         if (e.kind == Kind.HEADER) return null
@@ -647,20 +935,38 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
                 MenuOption("Remove from queue", Icons.Rounded.RemoveCircleOutline) { PlayerConnection.removeFromQueue(i) },
                 MenuOption("Add to playlist…", Icons.AutoMirrored.Rounded.PlaylistAdd) { menu = playlistChooser(listOf(s)) },
                 MenuOption("Go to album", Icons.Rounded.Album) { goTo(Page.AlbumPage(s.albumId)) },
-            ) + goToArtists(s) + editInfo(s))
+            ) + goToArtists(s) + editInfo(s) + lyricsOptions(s))
         }
         if (e.kind == Kind.ACTION || e.kind == Kind.SETTING) return null
         val songs = e.songs()
         val opts = ArrayList<MenuOption>()
         if (selectable(e)) opts += MenuOption("Select multiple", Icons.Rounded.CheckCircle) { toggleSelected(e) }
         if (e.kind == Kind.CONTAINER) {
-            val collection = e.target is Page.AlbumPage || e.target is Page.PlaylistPage
-            opts += MenuOption("Play", Icons.Rounded.PlayArrow) { PlayerConnection.playSongs(songs, fromCollection = collection) }
-            opts += MenuOption("Shuffle", Icons.Rounded.Shuffle) { PlayerConnection.playSongs(songs, shuffle = true, fromCollection = collection) }
+            val playlist = e.target is Page.PlaylistPage
+            val mix = e.playlist?.takeIf { it.mixMode && !it.readOnly }
+            if (mix != null) opts += MenuOption("Play mix", Icons.Rounded.PlayArrow) { PlayerConnection.playSongs(songs, playlist = true, mixPlaylistId = mix.id) }
+            else {
+                opts += MenuOption("Play", Icons.Rounded.PlayArrow) { PlayerConnection.playSongs(songs, playlist = playlist) }
+                opts += MenuOption("Shuffle", Icons.Rounded.Shuffle) { PlayerConnection.playSongs(songs, shuffle = true, playlist = playlist) }
+            }
         }
         opts += MenuOption("Play next", Icons.AutoMirrored.Rounded.QueueMusic) { PlayerConnection.playNext(songs); toast("Playing next") }
         opts += MenuOption("Add to queue", Icons.AutoMirrored.Rounded.QueueMusic) { PlayerConnection.addToQueue(songs); toast("Added to queue") }
         opts += MenuOption("Add to playlist…", Icons.AutoMirrored.Rounded.PlaylistAdd) { menu = playlistChooser(songs) }
+        if (e.kind == Kind.CONTAINER) opts += editInfo(songs)
+        // An artist: leave it out of the Artists tab (its songs stay), or bring it back.
+        (e.target as? Page.ArtistPage)?.name?.let { name ->
+            val hidden = com.dualamp.library.HiddenArtists.isHidden(name)
+            opts += MenuOption(if (hidden) "Show in Artists" else "Hide from Artists",
+                if (hidden) Icons.Rounded.Person else Icons.Rounded.RemoveCircleOutline) {
+                com.dualamp.library.HiddenArtists.setHidden(name, !hidden)
+                toast(if (hidden) "$name is back in Artists" else "$name hidden from Artists (Settings > Hidden artists)")
+            }
+            opts += MenuOption("Choose artist picture", Icons.Rounded.Image) { pickArtistPicture(name) }
+            if (com.dualamp.library.ArtistImages.hasCustom(name)) opts += MenuOption("Remove your artist picture", Icons.Rounded.HideImage) {
+                com.dualamp.library.ArtistImages.removeCustom(name); toast("Picture removed")
+            }
+        }
         e.song?.let { s ->
             val liked = PlaylistStore.isLiked(s.id)
             opts += MenuOption(if (liked) "Remove from Liked Songs" else "Add to Liked Songs",
@@ -668,26 +974,45 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
             opts += MenuOption("Go to album", Icons.Rounded.Album) { goTo(Page.AlbumPage(s.albumId)) }
             opts += goToArtists(s)
             opts += editInfo(s)
+            opts += lyricsOptions(s)
             val page = top.page
             if (page is Page.PlaylistPage && !page.id.startsWith("device:")) {
+                // Song order matters in a mix (each transition is between two songs next to each other).
+                val pl = PlaylistStore.playlist(page.id)
+                val at = pl?.songIds?.indexOf(s.id) ?: -1
+                val inOrder = pl?.mixMode == true || ((chosenSort ?: Sort.ALBUM_ARTIST) == Sort.ORDER && !desc)
+                if (pl != null && inOrder && at > 0) opts += MenuOption("Move up", Icons.Rounded.ArrowUpward) { PlaylistStore.move(page.id, at, -1) }
+                if (pl != null && inOrder && at >= 0 && at < pl.songIds.size - 1) opts += MenuOption("Move down", Icons.Rounded.ArrowDownward) { PlaylistStore.move(page.id, at, 1) }
                 opts += MenuOption("Remove from this playlist", Icons.Rounded.RemoveCircleOutline) { PlaylistStore.remove(page.id, s.id) }
             }
         }
         e.playlist?.let { p ->
+            // Your own picture for it (any playlist, also Liked Songs and playlist files: kept in DualAmp).
+            opts += MenuOption("Choose playlist picture", Icons.Rounded.Image) { pickPlaylistPicture(p) }
+            if (com.dualamp.library.ArtistImages.playlistPicture(p.id) != null) opts += MenuOption("Remove playlist picture", Icons.Rounded.HideImage) {
+                com.dualamp.library.ArtistImages.removePlaylistPicture(p.id)
+            }
             if (!p.readOnly && p.id != PlaylistStore.LIKED_ID) {
                 opts += MenuOption("Rename playlist", Icons.Rounded.Edit) { renamePrompt = RenamePrompt("Rename playlist", p.name) { PlaylistStore.rename(p.id, it.trim()) } }
-                opts += MenuOption("Delete playlist", Icons.Rounded.Delete) { PlaylistStore.delete(p.id); toast("Deleted ${p.name}") }
+                opts += MenuOption("Delete playlist", Icons.Rounded.Delete) { PlaylistStore.delete(p.id); com.dualamp.library.ArtistImages.removePlaylistPicture(p.id); toast("Deleted ${p.name}") }
             }
         }
         return MenuState(e.title, opts)
     }
 
-    BackHandler(enabled = pcProblem != null || aboutOpen || onboarding.isNotEmpty() || helpOpen || menu != null || stack.size > 1 || !tab.inHeader) {
+    // The bottom screen's now-playing view (tap the song in the player bar).
+    val bottomPlayerOpen by BottomPlayer.open.collectAsState()
+    BottomPlayer.addToPlaylist = { PlayerConnection.state.value.songId?.let { id -> (localLib?.songById?.get(id) ?: pcLib?.songById?.get(id)) }?.let { menu = playlistChooser(listOf(it)) } }
+    BottomPlayer.openQueue = { BottomPlayer.close(); selectCategory(Category.QUEUE) }
+    BottomPlayer.songMenu = { s -> menu = songMenu(s) }
+
+    BackHandler(enabled = pcProblem != null || aboutOpen || onboarding.isNotEmpty() || helpOpen || menu != null || bottomPlayerOpen || stack.size > 1 || !tab.inHeader) {
         when {
             onboarding.isNotEmpty() -> nextOnboarding()
             pcProblem != null -> com.dualamp.library.RemoteLibrary.dismissProblem()
             aboutOpen -> aboutOpen = false
             helpOpen -> closeHelp()
+            bottomPlayerOpen && menu == null -> BottomPlayer.close()
             else -> back()
         }
     }
@@ -712,6 +1037,20 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
                 }
                 ControllerBus.Nav.NEXT_CATEGORY, ControllerBus.Nav.OPEN_SEARCH, ControllerBus.Nav.OPEN_VISUALIZERS -> BigPlayer.open.value = false
                 else -> return@handle
+            }
+        }
+        // The bottom screen's now-playing view: the D-pad moves along its buttons, A presses, B closes, Y is the song's
+        // menu. Start, Select and their holds close it and do what they do; hold Y works as everywhere.
+        if (BottomPlayer.open.value && menu == null && !helpOpen && onboarding.isEmpty()) {
+            when (nav) {
+                ControllerBus.Nav.OPEN_SETTINGS, ControllerBus.Nav.NEXT_CATEGORY, ControllerBus.Nav.OPEN_SEARCH,
+                ControllerBus.Nav.OPEN_VISUALIZERS -> BottomPlayer.close()
+                ControllerBus.Nav.NOW_PLAYING_MENU -> Unit
+                ControllerBus.Nav.MENU -> {
+                    PlayerConnection.state.value.songId?.let { id -> localLib?.songById?.get(id) ?: pcLib?.songById?.get(id) }?.let { menu = songMenu(it) }
+                    return@handle
+                }
+                else -> { usingPad = true; BottomPlayer.handle(nav); return@handle }
             }
         }
         openPrompt.value?.let { p ->
@@ -751,7 +1090,7 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
                     PlaylistStore.toggleLike(s.id); toast(if (liked) "Removed from Liked Songs" else "Added to Liked Songs")
                 },
                 MenuOption("Add to playlist…", Icons.AutoMirrored.Rounded.PlaylistAdd) { menu = playlistChooser(listOf(s)) },
-            ))
+            ) + lyricsOptions(s))
             return@handle
         }
         if (nav == ControllerBus.Nav.OPEN_VISUALIZERS) {
@@ -790,8 +1129,7 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
                 MenuOption("Play next", Icons.AutoMirrored.Rounded.QueueMusic) { PlayerConnection.playNext(songs); toast("Playing next"); clearSelection() },
                 MenuOption("Add to queue", Icons.AutoMirrored.Rounded.QueueMusic) { PlayerConnection.addToQueue(songs); toast("Added to queue"); clearSelection() },
                 MenuOption("Add to playlist…", Icons.AutoMirrored.Rounded.PlaylistAdd) { menu = playlistChooser(songs); clearSelection() },
-                MenuOption("Clear selection", Icons.Rounded.Close) { clearSelection() },
-            ))
+            ) + editInfo(songs) + MenuOption("Clear selection", Icons.Rounded.Close) { clearSelection() })
             return@handle
         }
         if (onboarding.isNotEmpty()) {
@@ -832,10 +1170,13 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
         }
         val m = menu
         if (m != null) {
+            // Opened by touch (e.g. tapping the song in the bottom player): the first D-pad press shows the highlight.
+            if (!usingPad && (nav == ControllerBus.Nav.UP || nav == ControllerBus.Nav.DOWN)) { usingPad = true; return@handle }
+            usingPad = true
             when (nav) {
                 ControllerBus.Nav.UP -> m.cursor = (m.cursor - 1).coerceAtLeast(0)
                 ControllerBus.Nav.DOWN -> m.cursor = (m.cursor + 1).coerceAtMost(m.options.lastIndex)
-                ControllerBus.Nav.SELECT -> { menu = null; m.options.getOrNull(m.cursor)?.run?.invoke() }
+                ControllerBus.Nav.SELECT -> m.options.getOrNull(m.cursor)?.let { o -> if (!m.toggle(o)) { menu = null; o.run() } }
                 ControllerBus.Nav.BACK, ControllerBus.Nav.MENU, ControllerBus.Nav.LEFT -> menu = null
                 else -> Unit
             }
@@ -845,15 +1186,18 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
         // up goes on to the header, down / A / B go back to the page.
         if (chipsFocus && (nav in DIRECTIONS || nav == ControllerBus.Nav.SELECT || nav == ControllerBus.Nav.BACK)) {
             val cur = (stack.last().page as? Page.Root)?.category
+            // Settings has its own chips: its tabs.
+            val inSettings = stack.last().page == Page.Settings
             when (nav) {
-                ControllerBus.Nav.LEFT, ControllerBus.Nav.RIGHT -> cur?.let {
+                ControllerBus.Nav.LEFT, ControllerBus.Nav.RIGHT -> {
                     val step = if (nav == ControllerBus.Nav.RIGHT) 1 else -1
-                    selectCategory(Category.entries[(it.ordinal + step).mod(Category.entries.size)])
+                    if (inSettings) selectSettingsTab(SettingsTab.entries[(SettingsTab.current().ordinal + step).mod(SettingsTab.entries.size)])
+                    else cur?.let { selectCategory(Category.entries[(it.ordinal + step).mod(Category.entries.size)]) }
                 }
                 ControllerBus.Nav.UP -> { chipsFocus = false; headerFocus = headerSpotFor(tab) }
                 else -> chipsFocus = false
             }
-            if (cur == null) chipsFocus = false
+            if (cur == null && !inSettings) chipsFocus = false
             return@handle
         }
         // The header (tabs, search, visualizers, settings): D-pad up from the top row of a page gets here;
@@ -867,7 +1211,7 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
                 ControllerBus.Nav.RIGHT -> headerFocus = spots[(i + 1).coerceAtMost(spots.lastIndex)]
                 ControllerBus.Nav.DOWN, ControllerBus.Nav.BACK -> {
                     headerFocus = null
-                    if (nav == ControllerBus.Nav.DOWN && stack.last().page is Page.Root) chipsFocus = true
+                    if (nav == ControllerBus.Nav.DOWN && (stack.last().page is Page.Root || stack.last().page == Page.Settings)) chipsFocus = true
                 }
                 ControllerBus.Nav.SELECT -> when (f) {
                     HeaderSpot.PC -> tab = BottomTab.PC
@@ -884,7 +1228,7 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
         // A page with nothing to move through (e.g. the PC tab before connecting): up goes straight to the header.
         if (nav == ControllerBus.Nav.UP && stack.last().page !is Page.Search && currentData?.entries.isNullOrEmpty()) {
             usingPad = true
-            if (stack.last().page is Page.Root) chipsFocus = true else headerFocus = headerSpotFor(tab)
+            if (stack.last().page is Page.Root || stack.last().page == Page.Settings) chipsFocus = true else headerFocus = headerSpotFor(tab)
             return@handle
         }
         val d = currentData ?: return@handle
@@ -919,10 +1263,17 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
             return@handle
         }
         when (nav) {
-            ControllerBus.Nav.UP -> if (row > 0) t.cursor = rows[row - 1].let { it[col.coerceAtMost(it.lastIndex)] }
-                else if (t.page is Page.Root) chipsFocus = true
+            // (Only section titles above: that is the top, so up goes on to the chips / header.)
+            ControllerBus.Nav.UP -> if (row > 0 && rows.take(row).any { r -> r.any { entries.getOrNull(it)?.kind != Kind.HEADER } }) {
+                    if (flow) t.lastCover = t.cursor
+                    t.cursor = rows[row - 1].let { it[col.coerceAtMost(it.lastIndex)] }
+                }
+                else if (t.page is Page.Root || t.page == Page.Settings) chipsFocus = true
                 else if (t.page !is Page.Search) headerFocus = headerSpotFor(tab)
-            ControllerBus.Nav.DOWN -> if (row < rows.lastIndex) t.cursor = rows[row + 1].let { it[col.coerceAtMost(it.lastIndex)] }
+            ControllerBus.Nav.DOWN -> if (row < rows.lastIndex) t.cursor = rows[row + 1].let { next ->
+                    // Cover Flow: back down to the cover you left, not the first one.
+                    if (flow && t.lastCover in next) t.lastCover else next[col.coerceAtMost(next.lastIndex)]
+                }
             ControllerBus.Nav.LEFT -> when {
                 rows.isNotEmpty() && col > 0 -> t.cursor = rows[row][col - 1]
                 flow -> Unit // the first cover or button: stay (no tab switch)
@@ -946,7 +1297,13 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
     val latestHandleNav by rememberUpdatedState(handleNav)
     LaunchedEffect(Unit) { ControllerBus.nav.collect { latestHandleNav(it) } }
     // Keep the gamepad cursor fully on screen (names included), all the way to the last row.
-    val headerItems = if (data?.hero != null) 1 else 0
+    // Mix editor in the single-screen tabs layout: its waveforms are on this screen, so the page leaves out its own
+    // cover and titles (the waveforms show them). (Only the tabs layout passes onOpenPlayer; side by side, the player
+    // half shows the waveforms.)
+    val mixInline = top.page is Page.MixEdit && onOpenPlayer != null && mixSession != null
+    // Single screen (tabs or side by side): the waveforms are on this screen either way.
+    val mixHeroHidden = top.page is Page.MixEdit && singleScreenLayout && mixSession != null
+    val headerItems = if (data?.hero != null && !mixHeroHidden) 1 else 0
     LaunchedEffect(top, top.cursor, usingPad, view) {
         if (!usingPad || view == ViewMode.COVERFLOW) return@LaunchedEffect
         val index = top.cursor + headerItems
@@ -998,7 +1355,7 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
                 canGoBack = stack.size > 1 || !tab.inHeader,
                 onBack = { back() },
                 onSearch = ::openSearch,
-                onQuery = { q -> stack[stack.lastIndex] = StackEntry(Page.Search(q)) },
+                onQuery = { q -> stack[stack.lastIndex] = StackEntry((stack.last().page as? Page.Search)?.copy(query = q) ?: Page.Search(q)) },
                 searchState = searchKb,
                 onOpenKeyboard = { keyboardOpen = true },
                 showSearch = tab != BottomTab.EQUALIZER,
@@ -1008,11 +1365,16 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
                 onVisualizers = { toggleTab(BottomTab.VISUALIZERS) },
                 onAbout = { aboutOpen = true },
                 focus = if (usingPad) headerFocus else null,
-                showTabs = !tabsAtBottom,
+                showTabs = !tabsAtBottom && !(singleScreenLayout && top.page is Page.MixEdit),
             )
             }
             if (top.page is Page.Root) {
                 CategoryChips((top.page as Page.Root).category, ::selectCategory, focused = usingPad && chipsFocus)
+            }
+            // Settings: its tabs (Music library, Artists, Library view...).
+            if (top.page == Page.Settings) {
+                val cur = runCatching { SettingsTab.valueOf(settingsTabName) }.getOrDefault(SettingsTab.LIBRARY)
+                ChipRow(SettingsTab.entries.map { it.label }, cur.ordinal, { selectSettingsTab(SettingsTab.entries[it]) }, focused = usingPad && chipsFocus)
             }
             if (data != null && (data.sorts.isNotEmpty() || !fixedList)) {
                 SortRow(
@@ -1049,16 +1411,33 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
                         // Squares per row: Settings > Grid size (3-6; its own value in single-screen mode).
                         val cols = (if (singleScreenLayout) Prefs.gridColumnsSingle else Prefs.gridColumns).state.collectAsState().value.coerceIn(3, 6)
                         LaunchedEffect(cols) { columns = cols }
-                        PageContent(
-                            data = data,
-                            view = view,
-                            columns = cols,
-                            entry = top,
-                            highlight = if (usingPad && headerFocus == null && !chipsFocus) top.cursor else -1,
-                            nowPlaying = player.songId,
-                            onClick = { i, e -> top.cursor = i; activate(e) },
-                            onLongClick = { i, e -> top.cursor = i; if (selection.isNotEmpty() && selectable(e)) toggleSelected(e) else menu = menuFor(e) },
-                        )
+                        val content = @Composable { m: Modifier ->
+                            Box(m) {
+                                PageContent(
+                                    data = if (mixHeroHidden) data.copy(hero = null) else data,
+                                    view = view,
+                                    columns = cols,
+                                    entry = top,
+                                    highlight = if (usingPad && headerFocus == null && !chipsFocus) top.cursor else -1,
+                                    nowPlaying = player.songId,
+                                    onClick = { i, e -> top.cursor = i; activate(e) },
+                                    onLongClick = { i, e -> top.cursor = i; if (selection.isNotEmpty() && selectable(e)) toggleSelected(e) else menu = menuFor(e) },
+                                )
+                            }
+                        }
+                        // Mix editor in the single-screen tabs layout (no now-playing screen beside it): the waveforms
+                        // go above the settings (side by side when the screen is wide).
+                        // (Only the tabs layout passes onOpenPlayer; side by side, the player half shows them.)
+                        if (mixInline) {
+                            if (maxWidth > maxHeight * 1.4f) Row(Modifier.fillMaxSize()) {
+                                com.dualamp.ui.MixWaveformView(Modifier.weight(1f).fillMaxSize())
+                                content(Modifier.weight(1f).fillMaxSize())
+                            } else Column(Modifier.fillMaxSize()) {
+                                // Bigger while the waveforms are being used (see mixFocus).
+                                com.dualamp.ui.MixWaveformView(Modifier.fillMaxWidth().weight(if (mixFocus != null) 0.7f else 0.5f))
+                                content(Modifier.fillMaxWidth().weight(if (mixFocus != null) 0.3f else 0.5f))
+                            }
+                        } else content(Modifier.fillMaxSize())
                     }
                 }
             }
@@ -1069,16 +1448,21 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
                 onQueue = { PlayerConnection.addToQueue(selectedSongs()); toast("Added to queue"); clearSelection() },
                 onPlaylist = { menu = playlistChooser(selectedSongs()); clearSelection() },
                 onCancel = ::clearSelection,
+                onEdit = if (Prefs.editTags.value) ({ tagSave.edit(selectedSongs()) }) else null,
             )
             if (keyboardOpen && searchKb != null && top.page is Page.Search) {
                 GamepadKeyboard(searchKb!!, highlight = true, onDone = { keyboardOpen = false })
-            } else if (showMiniPlayer && top.page !is Page.Search) MiniPlayer(
-                onOpenQueue = onOpenPlayer ?: { selectCategory(Category.QUEUE) },
+            // (Not in the mix editor: the transition has its own play button, and the room goes to the waveforms.)
+            // Both screens: Settings > Now playing > Mini player can hide it (one screen keeps it: it opens the big player).
+            } else if (showMiniPlayer && (singleScreenLayout || miniPlayerOn) && top.page !is Page.Search && top.page !is Page.MixEdit) MiniPlayer(
+                // The tabs layout has its big player; otherwise the bottom screen's own now-playing view.
+                onOpenQueue = onOpenPlayer ?: { BottomPlayer.openUp() },
                 onAddToPlaylist = { song -> menu = playlistChooser(listOf(song)) },
                 onSongMenu = { song -> menu = songMenu(song) },
             )
             // Single-screen tabs layout, tabs at the bottom (Settings > Screens > Tab bar).
-            if (tabsAtBottom && !(keyboardOpen && top.page is Page.Search)) BottomTabBar(
+            // (One screen, mix editor: no tab bar, so the editor has the whole screen; the back arrow or B leaves it.)
+            if (tabsAtBottom && !(keyboardOpen && top.page is Page.Search) && !(singleScreenLayout && top.page is Page.MixEdit)) BottomTabBar(
                 tab = tab,
                 searching = top.page is Page.Search,
                 onTab = { tab = it },
@@ -1089,7 +1473,8 @@ private fun LibraryScreenBody(modifier: Modifier, showMiniPlayer: Boolean, tabsA
             )
         }
 
-        menu?.let { m -> MenuOverlay(m, highlight = usingPad, onDismiss = { menu = null }) { opt -> menu = null; opt.run() } }
+        if (bottomPlayerOpen) BottomPlayerView(usingPad && menu == null)
+        menu?.let { m -> MenuOverlay(m, highlight = usingPad, onDismiss = { menu = null }) { opt -> if (!m.toggle(opt)) { menu = null; opt.run() } } }
         // First launch: music folder, then the asleep-buttons permission, then the controls guide.
         if (onboarding.isNotEmpty()) OnboardingOverlay(onboarding.first(), onPrimary = ::onboardingPrimary, onSecondary = ::nextOnboarding)
         else if (helpOpen) ControlsOverlay(helpDontShow, onToggleDontShow = { helpDontShow = !helpDontShow }, onClose = ::closeHelp, listState = helpScroll)
@@ -1210,7 +1595,9 @@ private fun Header(
             }
         }
         if (page is Page.Search) {
-            if (searchState != null) KeyboardTextDisplay(searchState, onTap = onOpenKeyboard, modifier = Modifier.weight(1f))
+            // Searching one playlist: the box says so (the page title is "Search <playlist>").
+            if (searchState != null) KeyboardTextDisplay(searchState, onTap = onOpenKeyboard, modifier = Modifier.weight(1f),
+                placeholder = if (page.playlistId != null) title else "Artists, albums, songs")
             // Closes the keyboard and leaves search (B does the same).
             TextButton(onClick = onBack) { Text("Cancel", color = TextMain) }
             return@Row
@@ -1253,27 +1640,31 @@ private fun Header(
 }
 
 @Composable
-private fun CategoryChips(selected: Category, onSelect: (Category) -> Unit, focused: Boolean = false) {
+private fun CategoryChips(selected: Category, onSelect: (Category) -> Unit, focused: Boolean = false) =
+    ChipRow(Category.entries.map { it.label }, selected.ordinal, { onSelect(Category.entries[it]) }, focused)
+
+/** A row of chips, one picked (the library's categories, the settings' tabs). The gamepad cursor rings the picked one. */
+@Composable
+private fun ChipRow(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, focused: Boolean = false) {
     val state = rememberLazyListState()
-    LaunchedEffect(selected) { state.animateScrollToItem((selected.ordinal - 1).coerceAtLeast(0)) }
+    LaunchedEffect(selected) { state.animateScrollToItem((selected - 1).coerceAtLeast(0)) }
     LazyRow(
         state = state,
         contentPadding = PaddingValues(horizontal = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
     ) {
-        items(Category.entries) { c ->
-            val on = c == selected
+        itemsIndexed(labels) { i, label ->
+            val on = i == selected
             Text(
-                c.label,
+                label,
                 color = if (on) Color.Black else TextMain,
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
                     .background(if (on) Accent else Surface3)
-                    // Gamepad cursor on the chips: a ring round the selected one.
                     .then(if (on && focused) Modifier.border(2.dp, TextMain, RoundedCornerShape(50)) else Modifier)
-                    .clickable { onSelect(c) }
+                    .clickable { onSelect(i) }
                     .padding(horizontal = 14.dp, vertical = 7.dp),
             )
         }
@@ -1396,6 +1787,8 @@ internal fun ArtBox(art: Art, round: Boolean, modifier: Modifier) {
     val shape = if (round) CircleShape else RoundedCornerShape(6.dp)
     when (art) {
         is Art.Cover -> AlbumArt(art.albumId, art.songId, modifier, shape = shape)
+        is Art.Artist -> com.dualamp.ui.ArtistArt(art.name, modifier, shape) { ArtBox(art.fallback, round, modifier) }
+        is Art.Playlist -> com.dualamp.ui.PlaylistArt(art.id, modifier, shape) { ArtBox(art.fallback, round, modifier) }
         is Art.Symbol -> Placeholder(art.seed, modifier.aspectRatio(1f).clip(shape), icon = art.icon)
         is Art.TrackNo -> Box(modifier.aspectRatio(1f), contentAlignment = Alignment.Center) {
             Text(if (art.number > 0) art.number.toString() else "–", color = TextDim, style = MaterialTheme.typography.bodyLarge)
@@ -1522,7 +1915,11 @@ private fun EntryTile(e: Entry, highlighted: Boolean, modifier: Modifier) {
         Text(e.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1,
             textAlign = if (e.round) androidx.compose.ui.text.style.TextAlign.Center else null,
             modifier = Modifier.fillMaxWidth().scrollIfLong())
-        Text(e.subtitle, color = TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1,
+        // Its kind icon (e.g. the mixer symbol of a mixed playlist) before the subtitle, as Spotify does.
+        if (e.badge != null && !e.round) Row(verticalAlignment = Alignment.CenterVertically) {
+            EntryBadge(e)
+            Text(e.subtitle, color = TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1, modifier = Modifier.weight(1f).scrollIfLong())
+        } else Text(e.subtitle, color = TextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1,
             textAlign = if (e.round) androidx.compose.ui.text.style.TextAlign.Center else null, modifier = Modifier.fillMaxWidth().scrollIfLong())
     }
 }
@@ -1568,9 +1965,14 @@ private fun MenuOverlay(m: MenuState, highlight: Boolean, onDismiss: () -> Unit,
                             .padding(horizontal = 10.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(opt.icon, null, tint = TextDim, modifier = Modifier.size(22.dp))
+                        val ticked = opt.checkKey != null && opt.checkKey in m.checked
+                        if (opt.checkKey != null) Icon(if (ticked) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank, null,
+                            tint = if (ticked) Accent else TextDim, modifier = Modifier.size(22.dp))
+                        else Icon(opt.icon, null, tint = TextDim, modifier = Modifier.size(22.dp))
                         Spacer(Modifier.width(14.dp))
-                        Text(opt.label, style = MaterialTheme.typography.bodyLarge)
+                        Text(opt.labelOf?.invoke(m) ?: opt.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                        // Check boxes: what kind of playlist (and its own icon) on the right.
+                        if (opt.checkKey != null) Icon(opt.icon, null, tint = TextDim.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -1644,7 +2046,7 @@ private fun Loading() {
 @Composable
 private fun EmptyState(page: Page) {
     val text = when (page) {
-        is Page.Search -> if (page.query.isBlank()) "Search your library" else "No results for \"${page.query}\""
+        is Page.Search -> if (page.query.isBlank()) (if (page.playlistId != null) "Search this playlist's songs and artists" else "Search your library") else "No results for \"${page.query}\""
         Page.Root(Category.QUEUE) -> "The queue is empty. Pick something to play."
         Page.Presets -> "No presets yet. Import a folder of .milk files in Settings."
         else -> "Nothing here yet"
@@ -1838,6 +2240,8 @@ private fun SelectionBar(
     onQueue: () -> Unit,
     onPlaylist: () -> Unit,
     onCancel: () -> Unit,
+    /** Edit song info for all of them (null when Settings > Edit song info is off). */
+    onEdit: (() -> Unit)? = null,
 ) {
     Surface(color = Accent.copy(alpha = 0.18f), modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp).clip(RoundedCornerShape(8.dp))) {
         Row(Modifier.padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1847,6 +2251,7 @@ private fun SelectionBar(
             TextButton(onClick = onNext) { Text("Next", color = TextMain) }
             TextButton(onClick = onQueue) { Text("Queue", color = TextMain) }
             TextButton(onClick = onPlaylist) { Text("Playlist", color = TextMain) }
+            if (onEdit != null) TextButton(onClick = onEdit) { Text("Edit", color = TextMain) }
         }
     }
 }
@@ -1889,3 +2294,11 @@ private fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, on
 
 /** The library is half of a single-screen layout (Settings then show the single-screen grid size). */
 internal var singleScreenLayout = false
+
+/** The folder picker opened at [path] ("/storage/emulated/0/Music/X" or an SD card's "/storage/1234-ABCD/..."). */
+private fun folderDocUri(path: String): android.net.Uri? {
+    val m = Regex("""^/storage/([^/]+)(/.*)?$""").find(path) ?: return null
+    val volume = if (m.groupValues[1] == "emulated") "primary" else m.groupValues[1]
+    val rest = (if (m.groupValues[1] == "emulated") m.groupValues[2].removePrefix("/0") else m.groupValues[2]).trim('/')
+    return android.provider.DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "$volume:$rest")
+}
